@@ -58,7 +58,7 @@
 
       if (error) {
         if (error.message.includes("already registered")) {
-          message.textContent = "Email already is use. Log in instead.";
+          message.textContent = "Email already in use. Log in instead.";
         } else if (error.message.includes("Database error")) {
           message.textContent = "That username is taken or has invalid characters.";
         } else {
