@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile - Broskis Gaming Hub</title>
+</head>
+<body>
+  <h1>My profile</h1>
+  <p>Email: <span id="email"></span></p>
+  <p>Username: <span id="username"></span></p>
+  <p>WhatsApp: <span id="whatsapp"></span></p>
+  <p id="message"></p>
+  <button id="logout-button">Log out</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function loadProfile() {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        window.location.href = "___";
+        return;
+      }
+
+      const user = sessionData.session.user;
+      document.getElementById("email").textContent = user.email;
+
+      const { data: profile, error } = await db
+        .from("profiles")
+        .select("username, whatsapp")
+        .eq("id", user.id)
+        .single();
+
+      if (error) {
+        document.getElementById("message").textContent = "Could not load your profile.";
+        return;
+      }
+
+      document.getElementById("username").textContent = profile.username;
+      document.getElementById("whatsapp").textContent = profile.whatsapp;
+    }
+
+    document.getElementById("logout-button").addEventListener("click", async () => {
+      await db.auth.signOut();
+      window.location.href = "login.html";
+    });
+
+    loadProfile();
+  </script>
+</body>
+</html>
