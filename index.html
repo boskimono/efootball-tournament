@@ -8,5 +8,27 @@
 <body>
   <h1>BROSKIS GAMING HUB</h1>
   <p>..where gaming tournaments come to life..</p>
+
+   <p id="status">Checking connection...</p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function checkConnection() {
+      const { data, error } = await db.auth.getSession();
+      const box = document.getElementById("status");
+      if (error) {
+        box.textContent = "Oops! Try again";
+      } else {
+        box.textContent = "Works!";
+      }
+    }
+
+    checkConnection();
+  </script>
 </body>
 </html>
