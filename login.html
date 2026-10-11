@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log in - Broskis Gaming Hub</title>
+</head>
+<body>
+  <h1>Log in</h1>
+
+  <form id="login-form">
+    <label>Email <input id="email" type="email" required></label><br>
+    <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <button type="submit">Log in</button>
+  </form>
+
+  <p id="message"></p>
+  <button id="logout-button" hidden>Log out</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById("login-form");
+    const message = document.getElementById("message");
+    const logoutButton = document.getElementById("logout-button");
+
+    async function showState() {
+      const { data } = await db.auth.getSession();
+      if (data.session) {
+        message.textContent = "Logged in as " + data.session.user.email;
+        logoutButton.hidden = false;
+      } else {
+        logoutButton.hidden = true;
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const pin = document.getElementById("pin").value;
+
+      const { error } = await db.auth.signInWithPassword({
+        email: email,
+        password: pin
+      });
+
+      if (error) {
+        message.textContent = "___";
+        return;
+      }
+      showState();
+    });
+
+    logoutButton.addEventListener("click", async () => {
+      await db.auth.signOut();
+      message.textContent = "Logged out.";
+      showState();
+    });
+
+    showState();
+  </script>
+</body>
+</html>
