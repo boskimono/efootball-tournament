@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - Broskis Gaming Hub</title>
+</head>
+<body>
+  <h1>Join Broskis Gaming Hub</h1>
+
+  <form id="register-form">
+    <label>Email <input id="email" type="email" required></label><br>
+    <label>Username <input id="username" type="text" minlength="3" maxlength="20" required></label><br>
+    <label>WhatsApp number <input id="whatsapp" type="tel" required></label><br>
+    <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <label>Re-enter PIN <input id="pin2" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <button type="submit">Create account</button>
+  </form>
+
+  <p id="message"></p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById("register-form");
+    const message = document.getElementById("message");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const email = document.getElementById("email").value.trim();
+      const username = document.getElementById("username").value.trim();
+      const whatsapp = document.getElementById("whatsapp").value.replace(/\s/g, "");
+      const pin = document.getElementById("pin").value;
+      const pin2 = document.getElementById("pin2").value;
+
+      if (!/^[0-9]{6}$/.test(pin)) {
+        message.textContent = "PIN must be exactly 6 digits.";
+        return;
+      }
+      if (pin !== pin2) {
+        message.textContent = "The two PINs do not match.";
+        return;
+      }
+      if (!/^\+?[0-9]{10,15}$/.test(whatsapp)) {
+        message.textContent = "Enter a valid WhatsApp number.";
+        return;
+      }
+
+      const { data, error } = await db.auth.signUp({
+        email: email,
+        password: pin,
+        options: { data: { username: username, whatsapp: whatsapp } }
+      });
+
+      if (error) {
+        if (error.message.includes("already registered")) {
+          message.textContent = "Email already is use. Log in instead.";
+        } else if (error.message.includes("Database error")) {
+          message.textContent = "That username is taken or has invalid characters.";
+        } else {
+          message.textContent = error.message;
+        }
+        return;
+      }
+
+      message.textContent = "Account created!";
+    });
+  </script>
+</body>
+</html>
