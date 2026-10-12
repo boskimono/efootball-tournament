@@ -22,6 +22,17 @@
     <p id="username-message"></p>
     </div>
 
+<div>
+  <h2>Change PIN</h2>
+  <form id="pin-form">
+    <label>Current PIN <input id="current-pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <label>New PIN <input id="new-pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <label>Re-enter new PIN <input id="new-pin2" type="password" inputmode="numeric" maxlength="6" required></label><br>
+    <button type="submit">Change PIN</button>
+  </form>
+  <p id="pin-message"></p>
+</div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
@@ -79,6 +90,33 @@ document.getElementById("username-form").addEventListener("submit", async (event
 
   box.textContent = "Username changed!";
   loadProfile();
+});
+
+document.getElementById("pin-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const currentPin = document.getElementById("current-pin").value;
+  const newPin = document.getElementById("new-pin").value;
+  const newPin2 = document.getElementById("new-pin2").value;
+  const box = document.getElementById("pin-message");
+
+  if (!/^[0-9]{6}$/.test(newPin)) {
+    box.textContent = "PIN must be 6 digits.";
+    return;
+  }
+  if (newPin !== newPin2) {
+    box.textContent = "The new PINs do not match.";
+    return;
+  }
+
+  const { error } = await db.rpc("change_pin", { current_pin: currentPin, new_pin: newPin });
+
+  if (error) {
+    box.textContent = error.message;
+    return;
+  }
+
+  event.target.reset();
+  box.textContent = "PIN changed!";
 });
 
     loadProfile();
