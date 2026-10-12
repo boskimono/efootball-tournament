@@ -13,6 +13,15 @@
   <p id="message"></p>
   <button id="logout-button">Log out</button>
 
+  <div> 
+    <h2>Change username</h2>
+    <form id="username-form">
+    <input id="new-username" type="text" minlength="3" maxlength="20" required />
+    <button type="submit">Change username</button>
+    </form>
+    <p id="username-message"></p>
+    </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
@@ -48,14 +57,7 @@
       await db.auth.signOut();
       window.location.href = "login.html";
     });
-   <div> 
-    <h2>Change username</h2>
-    <form id="username-form">
-    <input id="new-username" type="text" minlength="3" maxlength="20" required />
-    <button type="submit">Change username</button>
-    </form>
-    <p id="username-message"></p>
-    </div>
+   
 
 document.getElementById("username-form").addEventListener("submit", async (event) => {
   event.preventDefault();
