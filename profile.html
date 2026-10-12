@@ -22,7 +22,7 @@
     async function loadProfile() {
       const { data: sessionData } = await db.auth.getSession();
       if (!sessionData.session) {
-        window.location.href = "___";
+        window.location.href = "login.html";
         return;
       }
 
