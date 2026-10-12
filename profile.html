@@ -48,6 +48,36 @@
       await db.auth.signOut();
       window.location.href = "login.html";
     });
+   <div> 
+    <h2>Change username</h2>
+    <form id="username-form">
+    <input id="new-username" type="text" minlength="3" maxlength="20" required />
+    <button type="submit">Change username</button>
+    </form>
+    <p id="username-message"></p>
+    </div>
+
+document.getElementById("username-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const newName = document.getElementById("new-username").value.trim();
+  const box = document.getElementById("username-message");
+
+  const { error } = await db.rpc("change_username", { new_username:  newName});
+
+  if (error) {
+    if (error.message.includes("profiles_username_unique")) {
+      box.textContent = "That username is taken.";
+    } else if (error.message.includes("username_format")) {
+      box.textContent = "Use 3-20 letters, numbers or underscores.";
+    } else {
+      box.textContent = error.message;
+    }
+    return;
+  }
+
+  box.textContent = "Username changed!";
+  loadProfile();
+});
 
     loadProfile();
   </script>
