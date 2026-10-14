@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deposit - Broskis Gaming Hub</title>
+</head>
+<body>
+  <h1>Deposit</h1>
+  <p><a href="profile.html">Back to profile</a></p>
+
+  <h2>Step 1: Choose amount</h2>
+  <label>Amount (₦1,000 to ₦10,000)
+    <input id="amount" type="number" min="1000" max="10000" step="1">
+  </label>
+
+  <h2>Step 2: Transfer to this account</h2>
+  <p>Bank: <span id="bank-name"></span></p>
+  <p>Account name: <span id="account-name"></span></p>
+  <p>Account number: <span id="account-number"></span>
+    <button type="button" id="copy-number">Copy</button></p>
+
+  <h2>Step 3: Attach your receipt</h2>
+  <input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf">
+
+  <p><button type="button" id="done-button">Done</button></p>
+  <p id="message"></p>
+  <h2>My deposits</h2>
+<div id="deposit-list"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const doneButton = document.getElementById("done-button");
+    let currentUser = null;
+
+async function loadDeposits() {
+  const list = document.getElementById("deposit-list");
+  const { data, error } = await db
+    .from("deposit_requests")
+    .select("amount, status, rejection_reason, created_at")
+    .eq("user_id", currentUser.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    list.textContent = "Could not load your deposits.";
+    return;
+  }
+
+  list.textContent = "";
+  if (data.length === 0) {
+    list.textContent = "No deposits yet.";
+    return;
+  }
+
+  data.forEach((row) => {
+    const line = document.createElement("p");
+    const date = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+    let text = "₦" + row.amount.toLocaleString("en-NG") + " - " + row.status + " - " + date;
+    if (row.status === "rejected" && row.rejection_reason) {
+      text += " (Reason: " + row.rejection_reason + ")";
+    }
+    line.textContent = text;
+    list.appendChild(line);
+  });
+}
+
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+      currentUser = sessionData.session.user;
+
+      const { data: settings, error } = await db.from("app_settings").select("key, value");
+      if (error) {
+        message.textContent = "Could not load bank details.";
+        return;
+      }
+
+      const map = {};
+      settings.forEach((row) => { map[row.key] = row.value; });
+      document.getElementById("bank-name").textContent = map.bank_name;
+      document.getElementById("account-name").textContent = map.account_name;
+      document.getElementById("account-number").textContent = map.account_number;
+      await loadDeposits();
+    }
+
+    document.getElementById("copy-number").addEventListener("click", async () => {
+      const number = document.getElementById("account-number").textContent;
+      await navigator.clipboard.writeText(number);
+      message.textContent = "Account number copied.";
+    });
+
+    doneButton.addEventListener("click", async () => {
+      const amount = Number(document.getElementById("amount").value);
+      const file = document.getElementById("receipt").files[0];
+
+      if (!Number.isInteger(amount) || amount < 1000 || amount > 10000) {
+        message.textContent = "Enter an amount between ₦1,000 and ₦10,000.";
+        return;
+      }
+      if (!file) {
+        message.textContent = "Attach your receipt first.";
+        return;
+      }
+
+      const extensions = { "image/jpeg": "jpg", "image/png": "png", "application/pdf": "pdf" };
+      const ext = extensions[file.type];
+      if (!ext) {
+        message.textContent = "Receipt must be a JPG, PNG or PDF.";
+        return;
+      }
+      if (file.size > 5242880) {
+        message.textContent = "Receipt must be 5 MB or smaller.";
+        return;
+      }
+
+      doneButton.disabled = true;
+      message.textContent = "Uploading...";
+
+      const path = currentUser.id + "/" + Date.now() + "." + ext;
+      const { error: uploadError } = await db.storage.from("receipts").upload(path, file);
+      if (uploadError) {
+        message.textContent = "Upload failed: " + uploadError.message;
+        doneButton.disabled = false;
+        return;
+      }
+
+      const { error: submitError } = await db.rpc("submit_deposit", { deposit_amount: amount, receipt: path });
+      if (submitError) {
+        message.textContent = submitError.message;
+        doneButton.disabled = false;
+        return;
+      }
+
+      message.textContent = "Submitted! Your deposit will be credited once it is confirmed.";
+      await loadDeposits();
+      document.getElementById("amount").value = "";
+      document.getElementById("receipt").value = "";
+      doneButton.disabled = false;
+    });
+
+    init();
+  </script>
+</body>
+</html>

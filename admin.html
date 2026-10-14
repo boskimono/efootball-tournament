@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Broskis Gaming Hub</title>
+</head>
+<body>
+  <h1>Admin</h1>
+  <p><a href="profile.html">Back to profile</a></p>
+
+  <h2>Pending deposits</h2>
+  <p id="message"></p>
+  <div id="pending-list"></div>
+  <h2>Tournaments</h2>
+<div id="tournament-list"></div>
+  <h2>Players</h2>
+<div id="player-list"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+
+    async function loadPending() {
+      const list = document.getElementById("pending-list");
+      const { data, error } = await db
+        .from("deposit_requests")
+        .select("id, amount, receipt_path, created_at, profiles!user_id(username, whatsapp)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load deposits: " + error.message;
+        return;
+      }
+
+      list.textContent = "";
+      if (data.length === 0) {
+        list.textContent = "No pending deposits.";
+        return;
+      }
+
+      data.forEach((row) => {
+        const box = document.createElement("div");
+        const date = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+
+        const info = document.createElement("p");
+        info.textContent =
+          row.profiles.username + " (" + row.profiles.whatsapp + ") - ₦" +
+          row.amount.toLocaleString("en-NG") + " - " + date;
+        box.appendChild(info);
+
+        const viewButton = document.createElement("button");
+        viewButton.textContent = "View receipt";
+        viewButton.addEventListener("click", async () => {
+          const { data: signed, error: signError } = await db.storage
+            .from("receipts")
+            .createSignedUrl(row.receipt_path, 300);
+          if (signError) {
+            message.textContent = "Could not open receipt: " + signError.message;
+            return;
+          }
+          window.open(signed.signedUrl, "_blank");
+        });
+        box.appendChild(viewButton);
+const approveButton = document.createElement("button");
+approveButton.textContent = "Approve";
+approveButton.addEventListener("click", async () => {
+  const sure = confirm(
+    "Approve ₦" + row.amount.toLocaleString("en-NG") + " for " + row.profiles.username +
+    "? Only do this if the money is in your bank account."
+  );
+  if (!sure) return;
+
+  const { error: approveError } = await db.rpc("approve_deposit", { request_id: row.id });
+  if (approveError) {
+    message.textContent = "Could not approve: " + approveError.message;
+    return;
+  }
+  message.textContent = "Approved ₦" + row.amount.toLocaleString("en-NG") + " for " + row.profiles.username + ".";
+  await loadPending();
+});
+box.appendChild(approveButton);
+
+const rejectButton = document.createElement("button");
+rejectButton.textContent = "Reject";
+rejectButton.addEventListener("click", async () => {
+  const reason = prompt("Reason for rejecting (optional). Press Cancel to stop.");
+  if (reason === null) return;
+
+  const { error: rejectError } = await db.rpc("reject_deposit", { request_id: row.id, reason: reason });
+  if (rejectError) {
+    message.textContent = "Could not reject: " + rejectError.message;
+    return;
+  }
+  message.textContent = "Rejected the deposit from " + row.profiles.username + ".";
+  await loadPending();
+});
+box.appendChild(rejectButton);
+        list.appendChild(box);
+      });
+    }
+
+async function loadPlayers() {
+  const list = document.getElementById("player-list");
+  const { data, error } = await db.rpc("admin_list_users");
+
+  if (error) {
+    list.textContent = "Could not load players: " + error.message;
+    return;
+  }
+
+  list.textContent = "";
+  data.forEach((p) => {
+    const box = document.createElement("div");
+    const joined = new Date(p.created_at).toLocaleDateString("en-NG", { timeZone: "Africa/Lagos" });
+
+    const info = document.createElement("p");
+    info.textContent =
+      p.username + (p.is_admin ? " [ADMIN]" : "") + " - " + p.email + " - " + p.whatsapp +
+      " - joined " + joined + " - balance ₦" + p.balance.toLocaleString("en-NG");
+    box.appendChild(info);
+
+    const adjustButton = document.createElement("button");
+    adjustButton.textContent = "Adjust wallet";
+    adjustButton.addEventListener("click", async () => {
+      const amountText = prompt("Amount in naira. Use a positive number to add, a negative number to remove (example: 500 or -500).");
+      if (amountText === null) return;
+      const amount = Number(amountText);
+      if (!Number.isInteger(amount) || amount === 0) {
+        message.textContent = "Enter a whole number that is not zero.";
+        return;
+      }
+
+      const note = prompt("Reason for this adjustment (required).");
+      if (note === null) return;
+
+      const sure = confirm(
+        (amount > 0 ? "Add ₦" : "Remove ₦") + Math.abs(amount).toLocaleString("en-NG") +
+        (amount > 0 ? " to " : " from ") + p.username + "'s wallet?"
+      );
+      if (!sure) return;
+
+      const { error: adjustError } = await db.rpc("admin_adjust_wallet", {
+        target_user: p.user_id,
+        adjust_amount: amount,
+        adjust_note: note
+      });
+      if (adjustError) {
+        message.textContent = "Could not adjust: " + adjustError.message;
+        return;
+      }
+      message.textContent = "Wallet adjusted for " + p.username + ".";
+      await loadPlayers();
+    });
+    box.appendChild(adjustButton);
+const resetButton = document.createElement("button");
+resetButton.textContent = "Reset PIN";
+resetButton.addEventListener("click", async () => {
+  const sure = confirm(
+    "Reset the PIN for " + p.username + "? Their old PIN will stop working immediately. " +
+    "Only do this if you are sure the person messaging you is this player."
+  );
+  if (!sure) return;
+
+  const { data: newPin, error: resetError } = await db.rpc("admin_reset_pin", { target_user: p.user_id });
+  if (resetError) {
+    message.textContent = "Could not reset: " + resetError.message;
+    return;
+  }
+  alert(
+    "New PIN for " + p.username + ": " + newPin +
+    "\n\nSend it to them on WhatsApp. They can change it right away from their profile page."
+  );
+  message.textContent = "PIN reset for " + p.username + ".";
+});
+box.appendChild(resetButton);
+
+const historyBox = document.createElement("div");
+const historyButton = document.createElement("button");
+historyButton.textContent = "Change history";
+historyButton.addEventListener("click", async () => {
+  if (historyBox.textContent !== "") {
+    historyBox.textContent = "";
+    return;
+  }
+
+  const { data: changes, error: historyError } = await db
+    .from("account_changes")
+    .select("change_type, old_value, new_value, created_at")
+    .eq("user_id", p.user_id)
+    .order("created_at", { ascending: false });
+
+  if (historyError) {
+    historyBox.textContent = "Could not load history: " + historyError.message;
+    return;
+  }
+  if (changes.length === 0) {
+    historyBox.textContent = "No changes recorded.";
+    return;
+  }
+
+  changes.forEach((c) => {
+    const when = new Date(c.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+    let what = "";
+    if (c.change_type === "username_changed") {
+      what = "Username: " + c.old_value + " → " + c.new_value;
+    } else if (c.change_type === "pin_changed") {
+      what = "PIN changed by the player";
+    } else if (c.change_type === "pin_reset") {
+      what = "PIN reset by admin";
+    }
+    const line = document.createElement("p");
+    line.textContent = when + " - " + what;
+    historyBox.appendChild(line);
+  });
+});
+box.appendChild(historyButton);
+box.appendChild(historyBox);
+    list.appendChild(box);
+  });
+}
+
+const statusText = {
+  coming_soon: "Coming soon",
+  registration_open: "Registration open",
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled"
+};
+
+async function setTournamentStatus(t, newStatus, question) {
+  const sure = confirm(question);
+  if (!sure) return;
+
+  const { error } = await db.rpc("admin_set_tournament_status", { p_tournament_id: t.id, p_status: newStatus });
+  if (error) {
+    message.textContent = "Could not change status: " + error.message;
+    return;
+  }
+  message.textContent = "Status changed.";
+  await loadTournaments();
+}
+
+async function loadTournaments() {
+  const list = document.getElementById("tournament-list");
+  const { data: tournaments, error } = await db
+    .from("tournaments")
+    .select("id, name, status, max_teams, entry_fee")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    list.textContent = "Could not load tournaments: " + error.message;
+    return;
+  }
+
+  list.textContent = "";
+  for (const t of tournaments) {
+    const { data: entries, error: entriesError } = await db
+      .from("tournament_entries")
+      .select("id, created_at, rules_accepted_at, profiles!user_id(username, whatsapp), tournament_teams(name)")
+      .eq("tournament_id", t.id)
+      .order("created_at", { ascending: true });
+
+    const activeByEntry = {};
+    let suspensionError = null;
+    if (!entriesError && entries.length > 0) {
+      const { data: suspensions, error: sError } = await db
+        .from("entry_suspensions")
+        .select("id, entry_id, kind, ends_at, reason")
+        .in("entry_id", entries.map((e) => e.id))
+        .is("lifted_at", null);
+
+      if (sError) {
+        suspensionError = sError;
+      } else {
+        suspensions.forEach((s) => {
+          if (s.ends_at === null || new Date(s.ends_at) > new Date()) {
+            activeByEntry[s.entry_id] = s;
+          }
+        });
+      }
+    }
+
+    const box = document.createElement("div");
+
+    const heading = document.createElement("p");
+    const count = entriesError ? "?" : entries.length;
+    heading.textContent = t.name + " - " + statusText[t.status] + " - " + count + " / " + t.max_teams + " entered";
+    box.appendChild(heading);
+
+    if (t.status === "coming_soon") {
+      const openButton = document.createElement("button");
+      openButton.textContent = "Open registration";
+      openButton.addEventListener("click", () =>
+        setTournamentStatus(
+          t,
+          "registration_open",
+          "Open registration for " + t.name + "? Players will be able to enter and pay straight away."
+        )
+      );
+      box.appendChild(openButton);
+    }
+
+    if (t.status === "registration_open") {
+      const backButton = document.createElement("button");
+      backButton.textContent = "Back to Coming soon";
+      backButton.addEventListener("click", () =>
+        setTournamentStatus(
+          t,
+          "coming_soon",
+          "Close registration and go back to Coming soon? This only works if nobody has entered yet."
+        )
+      );
+      box.appendChild(backButton);
+      const cancelButton = document.createElement("button");
+cancelButton.textContent = "Cancel tournament";
+cancelButton.addEventListener("click", async () => {
+  const playerCount = entriesError ? 0 : entries.length;
+  const typed = prompt(
+    "This will CANCEL " + t.name + " and refund " + playerCount + " player(s) ₦" +
+    t.entry_fee.toLocaleString("en-NG") + " each. It cannot be undone.\n\nType CANCEL to confirm."
+  );
+  if (typed !== "CANCEL") {
+    message.textContent = "Cancellation stopped.";
+    return;
+  }
+
+  const { data: refundedCount, error: cancelError } = await db.rpc("admin_cancel_tournament", { p_tournament_id: t.id });
+  if (cancelError) {
+    message.textContent = "Could not cancel: " + cancelError.message;
+    return;
+  }
+  message.textContent = "Tournament cancelled. Refunded " + refundedCount + " player(s).";
+  await loadTournaments();
+  await loadPlayers();
+});
+box.appendChild(cancelButton);
+    }
+
+    if (t.status === "in_progress") {
+      const doneButton = document.createElement("button");
+      doneButton.textContent = "Mark completed";
+      doneButton.addEventListener("click", () =>
+        setTournamentStatus(t, "completed", "Mark " + t.name + " as completed?")
+      );
+      box.appendChild(doneButton);
+    }
+
+    if (entriesError) {
+      const problem = document.createElement("p");
+      problem.textContent = "Could not load entries: " + entriesError.message;
+      box.appendChild(problem);
+    } else if (entries.length === 0) {
+      const none = document.createElement("p");
+      none.textContent = "No entries yet.";
+      box.appendChild(none);
+    } else {
+      if (suspensionError) {
+        const problem = document.createElement("p");
+        problem.textContent = "Could not load suspensions: " + suspensionError.message;
+        box.appendChild(problem);
+      }
+
+      entries.forEach((entry, index) => {
+        const active = activeByEntry[entry.id];
+        const row = document.createElement("div");
+
+        let text =
+          (index + 1) + ". " + entry.profiles.username + " (" + entry.profiles.whatsapp + ") - " +
+          entry.tournament_teams.name;
+          if (entry.rules_accepted_at) {
+  text += " - rules accepted " + new Date(entry.rules_accepted_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+}
+        if (active) {
+          if (active.kind === "serious") {
+            text += " - SERIOUS SUSPENSION, prizes frozen (" + active.reason + ")";
+          } else {
+            const until = new Date(active.ends_at).toLocaleDateString("en-NG", { timeZone: "Africa/Lagos" });
+            text += " - SUSPENDED until " + until + " (" + active.reason + ")";
+          }
+        }
+        const line = document.createElement("p");
+        line.textContent = text;
+        row.appendChild(line);
+
+        if (active) {
+          const liftButton = document.createElement("button");
+          liftButton.textContent = "Lift suspension";
+          liftButton.addEventListener("click", async () => {
+            const sure = confirm("Lift the suspension for " + entry.profiles.username + " (" + entry.tournament_teams.name + ")?");
+            if (!sure) return;
+
+            const { error: liftError } = await db.rpc("admin_lift_suspension", { p_suspension_id: active.id });
+            if (liftError) {
+              message.textContent = "Could not lift: " + liftError.message;
+              return;
+            }
+            message.textContent = "Suspension lifted.";
+            await loadTournaments();
+          });
+          row.appendChild(liftButton);
+        } else {
+          const suspendButton = document.createElement("button");
+          suspendButton.textContent = "Suspend (weeks)";
+          suspendButton.addEventListener("click", async () => {
+            const weeksText = prompt("How many weeks? (a whole number from 1 to 12)");
+            if (weeksText === null) return;
+            const weeks = Number(weeksText);
+            if (!Number.isInteger(weeks) || weeks < 1 || weeks > 12) {
+              message.textContent = "Enter a whole number of weeks from 1 to 12.";
+              return;
+            }
+
+            const reason = prompt("Reason for the suspension (required).");
+            if (reason === null) return;
+
+            const sure = confirm(
+              "Suspend " + entry.profiles.username + " (" + entry.tournament_teams.name + ") for " + weeks + " week(s)?"
+            );
+            if (!sure) return;
+
+            const { error: suspendError } = await db.rpc("admin_suspend_entry", {
+              p_entry_id: entry.id,
+              p_kind: "temporary",
+              p_weeks: weeks,
+              p_reason: reason
+            });
+            if (suspendError) {
+              message.textContent = "Could not suspend: " + suspendError.message;
+              return;
+            }
+            message.textContent = "Team suspended.";
+            await loadTournaments();
+          });
+          row.appendChild(suspendButton);
+
+          const seriousButton = document.createElement("button");
+          seriousButton.textContent = "Serious suspension";
+          seriousButton.addEventListener("click", async () => {
+            const reason = prompt("Reason for the serious suspension (required).");
+            if (reason === null) return;
+
+            const sure = confirm(
+              "SERIOUS suspension for " + entry.profiles.username + " (" + entry.tournament_teams.name + ")?\n\n" +
+              "It has no end date and freezes their prizes and winnings until you lift it."
+            );
+            if (!sure) return;
+
+            const { error: seriousError } = await db.rpc("admin_suspend_entry", {
+              p_entry_id: entry.id,
+              p_kind: "serious",
+              p_weeks: null,
+              p_reason: reason
+            });
+            if (seriousError) {
+              message.textContent = "Could not suspend: " + seriousError.message;
+              return;
+            }
+            message.textContent = "Serious suspension recorded.";
+            await loadTournaments();
+          });
+          row.appendChild(seriousButton);
+        }
+
+        box.appendChild(row);
+      });
+    }
+
+    list.appendChild(box);
+  }
+}
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      const { data: me, error } = await db
+        .from("profiles")
+        .select("is_admin")
+        .eq("id", sessionData.session.user.id)
+        .single();
+
+      if (error || !me.is_admin) {
+        window.location.href = "profile.html";
+        return;
+      }
+
+      await loadPending();
+      await loadTournaments();
+      await loadPlayers();
+    }
+
+    init();
+  </script>
+</body>
+</html>

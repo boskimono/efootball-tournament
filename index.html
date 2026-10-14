@@ -9,26 +9,60 @@
   <h1>BROSKIS GAMING HUB</h1>
   <p>..where gaming tournaments come to life..</p>
 
-   <p id="status">Checking connection...</p>
+  <div id="guest-actions">
+    <p><a href="login.html">Log in</a></p>
+    <p><a href="register.html">Register</a></p>
+    <p><a href="contest.html">Use as guest</a></p>
+    <p><a href="rules.html">Rules and FAQ</a></p>
+    <p><a href="completed.html">Past tournaments</a></p>
+  </div>
+
+  <div id="member-actions" hidden>
+    <p id="welcome"></p>
+    <p><a href="profile.html">My profile</a></p>
+    <p><a href="contest.html">Contest</a></p>
+    <p><a href="rules.html">Rules and FAQ</a></p>
+    <p><a href="completed.html">Past tournaments</a></p>
+<p><a href="tips.html">Tips</a></p>
+    <p><a href="deposit.html">Deposit</a></p>
+    <p id="admin-link" hidden><a href="admin.html">Admin</a></p>
+    <p><button type="button" id="logout-button">Log out</button></p>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
     const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
-
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    async function checkConnection() {
-      const { data, error } = await db.auth.getSession();
-      const box = document.getElementById("status");
-      if (error) {
-        box.textContent = "Oops! Try again";
-      } else {
-        box.textContent = "Works!";
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        return;
+      }
+
+      const { data: profile } = await db
+        .from("profiles")
+        .select("username, is_admin")
+        .eq("id", sessionData.session.user.id)
+        .single();
+
+      document.getElementById("guest-actions").hidden = true;
+      document.getElementById("member-actions").hidden = false;
+      document.getElementById("welcome").textContent =
+        "Welcome back, " + (profile ? profile.username : "player") + "!";
+
+      if (profile && profile.is_admin) {
+        document.getElementById("admin-link").hidden = false;
       }
     }
 
-    checkConnection();
+    document.getElementById("logout-button").addEventListener("click", async () => {
+      await db.auth.signOut();
+      window.location.reload();
+    });
+
+    init();
   </script>
 </body>
 </html>

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contest - Broskis Gaming Hub</title>
+</head>
+<body>
+  <p><a href="index.html">Home</a> | <a href="profile.html">Profile</a> | <a href="deposit.html">Deposit</a> | <a href="completed.html">Past tournaments</a></p>
+
+  <h1 id="tournament-name">Loading...</h1>
+  <p id="tournament-status"></p>
+  <p id="tournament-info"></p>
+
+  <h2>Prizes</h2>
+  <div id="prize-list"></div>
+  <p id="prize-total"></p>
+  <p id="money-summary"></p>
+
+  <h2>Teams</h2>
+  <p id="entry-count"></p>
+  <p id="wallet-line"></p>
+  <p id="login-hint" hidden><a href="login.html">Log in</a> to enter the tournament.</p>
+  <div id="team-list"></div>
+
+<p id="rules-box" hidden>
+  <label>
+    <input type="checkbox" id="accept-rules">
+    I have read and accept the <a href="rules.html" target="_blank">tournament rules</a>.
+  </label>
+</p>
+
+  <p><button type="button" id="enter-button" disabled>Enter</button></p>
+  <p id="message"></p>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const enterButton = document.getElementById("enter-button");
+    const acceptBox = document.getElementById("accept-rules");
+const rulesBox = document.getElementById("rules-box");
+acceptBox.addEventListener("change", () => updateButton());
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+    const statusText = {
+      coming_soon: "Coming soon",
+      registration_open: "Registration open",
+      in_progress: "In progress",
+      completed: "Completed",
+      cancelled: "Cancelled"
+    };
+
+    let me = null;
+    let currentTournament = null;
+    let selectedTeamId = null;
+    let selectedTeamName = "";
+    let myEntry = null;
+    let entryCount = 0;
+
+    function naira(amount) {
+      return "₦" + amount.toLocaleString("en-NG");
+    }
+
+    async function loadPrizes(tournament) {
+      const list = document.getElementById("prize-list");
+      const { data, error } = await db
+        .from("tournament_prizes")
+        .select("label, amount, quantity")
+        .eq("tournament_id", tournament.id)
+        .order("sort_order", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load prizes.";
+        return;
+      }
+
+      list.textContent = "";
+      let total = 0;
+      data.forEach((prize) => {
+        total += prize.amount * prize.quantity;
+        let text = prize.label + ": " + naira(prize.amount);
+        if (prize.quantity > 1) {
+          text += " x " + prize.quantity;
+        }
+        const line = document.createElement("p");
+        line.textContent = text;
+        list.appendChild(line);
+      });
+
+      document.getElementById("prize-total").textContent = "Total prize money: " + naira(total);
+
+      const collected = tournament.max_teams * tournament.entry_fee;
+      const adminFee = collected - total;
+      if (adminFee >= 0) {
+        document.getElementById("money-summary").textContent =
+          "Entry fees collected: " + naira(collected) +
+          " | Prizes: " + naira(total) +
+          " | Admin fee: " + naira(adminFee);
+      }
+    }
+
+    async function loadWallet() {
+      const line = document.getElementById("wallet-line");
+      if (!me) {
+        line.textContent = "";
+        return;
+      }
+      const { data } = await db
+        .from("wallet_balances")
+        .select("balance")
+        .eq("user_id", me.id)
+        .maybeSingle();
+      line.textContent = "Your wallet: " + naira(data ? data.balance : 0);
+    }
+
+    async function loadTeams(tournament) {
+      const list = document.getElementById("team-list");
+
+      const { data: teams, error: teamsError } = await db
+        .from("tournament_teams")
+        .select("id, name, short_name, logo_path")
+        .eq("tournament_id", tournament.id)
+        .order("name", { ascending: true });
+
+      const { data: entries, error: entriesError } = await db
+        .from("tournament_entries")
+        .select("team_id, user_id")
+        .eq("tournament_id", tournament.id);
+
+      if (teamsError || entriesError) {
+        list.textContent = "Could not load teams.";
+        return;
+      }
+
+      entryCount = entries.length;
+      myEntry = me ? entries.find((e) => e.user_id === me.id) || null : null;
+      const taken = new Set(entries.map((e) => e.team_id));
+
+      document.getElementById("entry-count").textContent =
+        entryCount + " / " + tournament.max_teams + " teams entered";
+
+      const canPick =
+        tournament.status === "registration_open" &&
+        me !== null &&
+        myEntry === null &&
+        entryCount < tournament.max_teams;
+
+      selectedTeamId = null;
+      selectedTeamName = "";
+      list.textContent = "";
+
+      teams.forEach((team) => {
+        const card = document.createElement("div");
+
+        if (canPick && !taken.has(team.id)) {
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = "team";
+          radio.value = team.id;
+          radio.addEventListener("change", () => {
+            selectedTeamId = team.id;
+            selectedTeamName = team.name;
+            updateButton();
+          });
+          card.appendChild(radio);
+        }
+
+        if (team.logo_path) {
+          const logo = document.createElement("img");
+          logo.src = db.storage.from("club-logos").getPublicUrl(team.logo_path).data.publicUrl;
+          logo.alt = team.name;
+          logo.width = 48;
+          logo.height = 48;
+          card.appendChild(logo);
+        }
+
+        let state = "Available";
+        if (myEntry && myEntry.team_id === team.id) {
+          state = "Your team";
+        } else if (taken.has(team.id)) {
+          state = "Taken";
+        }
+
+        const label = document.createElement("span");
+        label.textContent = " " + team.name + " - " + state;
+        card.appendChild(label);
+
+        list.appendChild(card);
+      });
+    }
+
+    function updateButton() {
+      const tournament = currentTournament;
+      const loginHint = document.getElementById("login-hint");
+      loginHint.hidden = true;
+      enterButton.disabled = true;
+      rulesBox.hidden = true;
+
+      if (tournament.status === "coming_soon") {
+        enterButton.textContent = "Registration opens soon";
+      } else if (tournament.status !== "registration_open") {
+        enterButton.textContent = "Registration closed";
+      } else if (!me) {
+        enterButton.textContent = "Log in to enter";
+        loginHint.hidden = false;
+      } else if (myEntry) {
+        enterButton.textContent = "You have entered";
+      } else if (entryCount >= tournament.max_teams) {
+        enterButton.textContent = "Tournament full";
+      } else {
+  enterButton.textContent = "Enter with " + naira(tournament.entry_fee);
+  rulesBox.hidden = false;
+  enterButton.disabled = selectedTeamId === null || !acceptBox.checked;
+}
+    }
+
+    async function refresh() {
+      await loadTeams(currentTournament);
+      await loadWallet();
+      updateButton();
+    }
+
+    enterButton.addEventListener("click", async () => {
+      if (selectedTeamId === null) return;
+
+      const sure = confirm(
+        "Enter " + currentTournament.name + " as " + selectedTeamName + "?\n\n" +
+        naira(currentTournament.entry_fee) + " will be taken from your wallet. " +
+        "Entry fees are not refundable unless the tournament is cancelled."
+      );
+      if (!sure) return;
+
+      enterButton.disabled = true;
+      message.textContent = "Entering...";
+
+      const { error } = await db.rpc("enter_tournament", {
+  p_tournament_id: currentTournament.id,
+  p_team_id: selectedTeamId,
+  p_accept_rules: acceptBox.checked
+});
+
+      if (error) {
+        message.textContent = "Could not enter: " + error.message;
+        await refresh();
+        return;
+      }
+
+      message.textContent = "You're in! You will represent " + selectedTeamName + ".";
+      await refresh();
+    });
+
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      me = sessionData.session ? sessionData.session.user : null;
+
+      const { data: tournament, error } = await db
+        .from("tournaments")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !tournament) {
+        document.getElementById("tournament-name").textContent = "Tournament not found.";
+        return;
+      }
+
+      currentTournament = tournament;
+      document.getElementById("tournament-name").textContent = tournament.name;
+      document.getElementById("tournament-status").textContent =
+        "Status: " + statusText[tournament.status];
+      document.getElementById("tournament-info").textContent =
+        "Entry fee: " + naira(tournament.entry_fee) + " | Teams: " + tournament.max_teams;
+
+      await loadPrizes(tournament);
+      await refresh();
+    }
+
+    init();
+  </script>
+</body>
+</html>

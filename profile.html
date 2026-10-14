@@ -7,9 +7,15 @@
 </head>
 <body>
   <h1>My profile</h1>
+  <p><a href="index.html">Home</a></p>
   <p>Email: <span id="email"></span></p>
   <p>Username: <span id="username"></span></p>
   <p>WhatsApp: <span id="whatsapp"></span></p>
+  <p>Wallet balance: ₦<span id="balance">0</span></p>
+  <p><a href="deposit.html">Deposit</a></p>
+  <p><a href="contest.html">Contest</a></p>
+  <h2>Wallet history</h2>
+<div id="wallet-history"></div>
   <p id="message"></p>
   <button id="logout-button">Log out</button>
 
@@ -39,6 +45,50 @@
     const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const typeLabels = {
+  deposit: "Deposit",
+  entry_fee: "Tournament entry",
+  winnings: "Winnings",
+  withdrawal: "Withdrawal",
+  refund: "Refund",
+  adjustment: "Adjustment"
+};
+
+async function loadWalletHistory(userId) {
+  const list = document.getElementById("wallet-history");
+  const { data, error } = await db
+    .from("wallet_transactions")
+    .select("amount, type, note, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    list.textContent = "Could not load your wallet history.";
+    return;
+  }
+
+  list.textContent = "";
+  if (data.length === 0) {
+    list.textContent = "No transactions yet.";
+    return;
+  }
+
+  data.forEach((row) => {
+    const when = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+    const sign = row.amount > 0 ? "+" : "-";
+    let text =
+      when + " - " + (typeLabels[row.type] || row.type) + " - " + sign + "₦" +
+      Math.abs(row.amount).toLocaleString("en-NG");
+    if (row.note) {
+      text += " - " + row.note;
+    }
+    const line = document.createElement("p");
+    line.textContent = text;
+    list.appendChild(line);
+  });
+}
+
     async function loadProfile() {
       const { data: sessionData } = await db.auth.getSession();
       if (!sessionData.session) {
@@ -62,6 +112,15 @@
 
       document.getElementById("username").textContent = profile.username;
       document.getElementById("whatsapp").textContent = profile.whatsapp;
+      const { data: wallet } = await db
+  .from("wallet_balances")
+  .select("balance")
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+const balance = wallet ? wallet.balance : 0;
+document.getElementById("balance").textContent = balance.toLocaleString("en-NG");
+await loadWalletHistory(user.id);
     }
 
     document.getElementById("logout-button").addEventListener("click", async () => {

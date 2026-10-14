@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Past tournaments - Broskis Gaming Hub</title>
+</head>
+<body>
+  <p><a href="index.html">Home</a> | <a href="contest.html">Contest</a> | <a href="rules.html">Rules and FAQ</a></p>
+
+  <h1>Past tournaments</h1>
+  <div id="list"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function formatDate(value) {
+      return new Date(value).toLocaleDateString("en-NG", {
+        timeZone: "Africa/Lagos",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      });
+    }
+
+    async function init() {
+      const list = document.getElementById("list");
+
+      const { data: tournaments, error } = await db
+        .from("tournaments")
+        .select("id, name, entry_fee, starts_at, ended_at, summary")
+        .eq("status", "completed")
+        .order("ended_at", { ascending: false });
+
+      if (error) {
+        list.textContent = "Could not load past tournaments.";
+        return;
+      }
+
+      list.textContent = "";
+      if (tournaments.length === 0) {
+        list.textContent = "No completed tournaments yet.";
+        return;
+      }
+
+      for (const t of tournaments) {
+        const box = document.createElement("div");
+
+        const title = document.createElement("h2");
+        title.textContent = t.name;
+        box.appendChild(title);
+
+        let dates = "";
+        if (t.starts_at && t.ended_at) {
+          dates = formatDate(t.starts_at) + " to " + formatDate(t.ended_at);
+        } else if (t.ended_at) {
+          dates = "Ended " + formatDate(t.ended_at);
+        }
+        const info = document.createElement("p");
+        info.textContent =
+          (dates ? dates + " | " : "") +
+          "Entry: " + (t.entry_fee === 0 ? "Free" : "₦" + t.entry_fee.toLocaleString("en-NG"));
+        box.appendChild(info);
+
+        if (t.summary) {
+          const summary = document.createElement("p");
+          summary.style.whiteSpace = "pre-line";
+          summary.textContent = t.summary;
+          box.appendChild(summary);
+        }
+
+        const { data: honours, error: honoursError } = await db
+          .from("tournament_honours")
+          .select("label, winner_name, team_name, prize")
+          .eq("tournament_id", t.id)
+          .order("sort_order", { ascending: true });
+
+        if (!honoursError && honours.length > 0) {
+          const heading = document.createElement("h3");
+          heading.textContent = "Honours";
+          box.appendChild(heading);
+
+          honours.forEach((h) => {
+            let text = h.label + ": " + h.winner_name;
+            if (h.team_name) {
+              text += " (" + h.team_name + ")";
+            }
+            if (h.prize) {
+              text += " - ₦" + h.prize.toLocaleString("en-NG");
+            }
+            const line = document.createElement("p");
+            line.textContent = text;
+            box.appendChild(line);
+          });
+        }
+
+        list.appendChild(box);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

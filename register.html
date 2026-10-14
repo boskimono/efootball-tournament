@@ -18,6 +18,8 @@
   </form>
 
   <p id="message"></p>
+  <p>Already have an account? <a href="login.html">Log in</a></p>
+<p><a href="index.html">Home</a></p>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -68,6 +70,7 @@
       }
 
       message.textContent = "Account created!";
+            setTimeout(() => { window.location.href = "profile.html"; }, 1500);
     });
   </script>
 </body>

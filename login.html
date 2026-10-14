@@ -15,6 +15,8 @@
   </form>
 
   <p id="message"></p>
+  <p>No account yet? <a href="register.html">Register</a></p>
+<p><a href="index.html">Home</a></p>
   <button id="logout-button" hidden>Log out</button>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -51,7 +53,7 @@
         message.textContent = "Wrong email or PIN.";
         return;
       }
-      showState();
+      window.location.href = "profile.html";
     });
 
     logoutButton.addEventListener("click", async () => {

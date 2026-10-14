@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rules and FAQ - Broskis Gaming Hub</title>
+</head>
+<body>
+  <p><a href="index.html">Home</a> | <a href="contest.html">Contest</a> | <a href="tips.html">Tips</a></p>
+
+  <h1>Rules and FAQ</h1>
+  <p id="message"></p>
+
+  <h2>Tournament rules</h2>
+  <div id="rules"></div>
+
+  <h2>FAQ</h2>
+  <div id="faq"></div>
+
+  <h2>Contact the moderator</h2>
+  <div id="contact"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+
+    function addItem(container, heading, body) {
+      const wrap = document.createElement("div");
+      const h = document.createElement("h3");
+      h.textContent = heading;
+      const p = document.createElement("p");
+      p.style.whiteSpace = "pre-line";
+      p.textContent = body;
+      wrap.appendChild(h);
+      wrap.appendChild(p);
+      container.appendChild(wrap);
+    }
+
+    async function loadSection(kind, tournamentId, container, numbered) {
+      let query = db
+        .from("content_items")
+        .select("title, body")
+        .eq("kind", kind)
+        .order("sort_order", { ascending: true });
+
+      if (tournamentId === null) {
+        query = query.is("tournament_id", null);
+      } else {
+        query = query.eq("tournament_id", tournamentId);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        container.textContent = "Could not load this section.";
+        return;
+      }
+
+      container.textContent = "";
+      if (data.length === 0) {
+        container.textContent = "Nothing here yet.";
+        return;
+      }
+
+      data.forEach((item, index) => {
+        const heading = numbered ? (index + 1) + ". " + item.title : item.title;
+        addItem(container, heading, item.body);
+      });
+    }
+
+    async function loadContact(me) {
+      const box = document.getElementById("contact");
+      if (!me) {
+        box.textContent = "Log in to see the moderator's contact details.";
+        return;
+      }
+
+      const { data, error } = await db
+        .from("app_settings")
+        .select("key, value")
+        .in("key", ["admin_whatsapp", "admin_email"]);
+
+      if (error) {
+        box.textContent = "Could not load contact details.";
+        return;
+      }
+
+      const map = {};
+      data.forEach((row) => { map[row.key] = row.value; });
+      box.textContent = "";
+      const whatsapp = document.createElement("p");
+      whatsapp.textContent = "WhatsApp: " + map.admin_whatsapp;
+      const email = document.createElement("p");
+      email.textContent = "Email: " + map.admin_email;
+      box.appendChild(whatsapp);
+      box.appendChild(email);
+    }
+
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      const me = sessionData.session ? sessionData.session.user : null;
+
+      const { data: tournament, error } = await db
+        .from("tournaments")
+        .select("id")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !tournament) {
+        message.textContent = "Tournament not found.";
+        return;
+      }
+
+      await loadSection("rule", tournament.id, document.getElementById("rules"), true);
+      await loadSection("faq", null, document.getElementById("faq"), false);
+      await loadContact(me);
+    }
+
+    init();
+  </script>
+</body>
+</html>

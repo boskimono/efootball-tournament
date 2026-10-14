@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tips - Broskis Gaming Hub</title>
+</head>
+<body>
+  <p><a href="index.html">Home</a> | <a href="rules.html">Rules and FAQ</a> | <a href="contest.html">Contest</a></p>
+
+  <h1>Tips</h1>
+  <div id="tips"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function init() {
+      const box = document.getElementById("tips");
+      const { data, error } = await db
+        .from("content_items")
+        .select("title, body")
+        .eq("kind", "tip")
+        .is("tournament_id", null)
+        .order("sort_order", { ascending: true });
+
+      if (error) {
+        box.textContent = "Could not load tips.";
+        return;
+      }
+
+      box.textContent = "";
+      if (data.length === 0) {
+        box.textContent = "No tips yet.";
+        return;
+      }
+
+      data.forEach((item) => {
+        const h = document.createElement("h3");
+        h.textContent = item.title;
+        const p = document.createElement("p");
+        p.style.whiteSpace = "pre-line";
+        p.textContent = item.body;
+        box.appendChild(h);
+        box.appendChild(p);
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
