@@ -3,22 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rules and FAQ - Broskis Gaming Hub</title>
+  <title>Rules and FAQs - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <p><a href="index.html">Home</a> | <a href="contest.html">Contest</a> | <a href="tips.html">Tips</a></p>
+  <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <h1>Rules and FAQ</h1>
-  <p id="message"></p>
+  <main class="stack">
+    <h1>Rules and FAQs</h1>
+    <p id="message" class="message"></p>
 
-  <h2>Tournament rules</h2>
-  <div id="rules"></div>
+    <section>
+      <h2>Tournament rules</h2>
+      <div id="rules"></div>
+    </section>
 
-  <h2>FAQ</h2>
-  <div id="faq"></div>
+    <section>
+      <h2>FAQs</h2>
+      <div id="faq"></div>
+    </section>
 
-  <h2>Contact the moderator</h2>
-  <div id="contact"></div>
+    <section class="card">
+      <h2>Contact the moderator</h2>
+      <div id="contact"></div>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -29,14 +43,43 @@
     const message = document.getElementById("message");
     const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
 
-    function addItem(container, heading, body) {
-      const wrap = document.createElement("div");
+        function addRule(container, number, title, body) {
+      const wrap = document.createElement("article");
+      wrap.className = "rule";
+
+      const num = document.createElement("span");
+      num.className = "rule-num";
+      num.textContent = number;
+
+      const content = document.createElement("div");
+      content.className = "rule-body";
+
       const h = document.createElement("h3");
-      h.textContent = heading;
+      h.textContent = title;
+
       const p = document.createElement("p");
-      p.style.whiteSpace = "pre-line";
+      p.className = "prose";
       p.textContent = body;
-      wrap.appendChild(h);
+
+      content.appendChild(h);
+      content.appendChild(p);
+      wrap.appendChild(num);
+      wrap.appendChild(content);
+      container.appendChild(wrap);
+    }
+
+    function addFaq(container, title, body) {
+      const wrap = document.createElement("details");
+      wrap.className = "faq";
+
+      const summary = document.createElement("summary");
+      summary.textContent = title;
+
+      const p = document.createElement("p");
+      p.className = "prose";
+      p.textContent = body;
+
+      wrap.appendChild(summary);
       wrap.appendChild(p);
       container.appendChild(wrap);
     }
@@ -66,9 +109,12 @@
         return;
       }
 
-      data.forEach((item, index) => {
-        const heading = numbered ? (index + 1) + ". " + item.title : item.title;
-        addItem(container, heading, item.body);
+            data.forEach((item, index) => {
+        if (numbered) {
+          addRule(container, index + 1, item.title, item.body);
+        } else {
+          addFaq(container, item.title, item.body);
+        }
       });
     }
 
@@ -122,5 +168,6 @@
 
     init();
   </script>
+   <script src="nav.js"></script>
 </body>
 </html>

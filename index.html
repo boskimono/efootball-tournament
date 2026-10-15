@@ -4,30 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <h1>BROSKIS GAMING HUB</h1>
-  <p>..where gaming tournaments come to life..</p>
+<body class="home">
+  <nav id="nav" aria-label="Main navigation"></nav>
 
-  <div id="guest-actions">
-    <p><a href="login.html">Log in</a></p>
-    <p><a href="register.html">Register</a></p>
-    <p><a href="contest.html">Use as guest</a></p>
-    <p><a href="rules.html">Rules and FAQ</a></p>
-    <p><a href="completed.html">Past tournaments</a></p>
+  <main class="home-main">
+    <section class="hero">
+    <img class="hero-logo" src="images/logo.png" alt="Broskis Gaming Hub logo">
+    <h1>Broskis Gaming Hub</h1>
+    <p class="tagline">..where gaming tournaments come to life..</p>
+  </section>
+
+  <div id="guest-actions" class="actions">
+    <a class="btn btn-primary" href="login.html">Log in</a>
+    <a class="btn btn-secondary" href="register.html">Register</a>
+    <a class="link-quiet" href="contest.html">Use as guest</a>
   </div>
 
   <div id="member-actions" hidden>
-    <p id="welcome"></p>
-    <p><a href="profile.html">My profile</a></p>
-    <p><a href="contest.html">Contest</a></p>
-    <p><a href="rules.html">Rules and FAQ</a></p>
-    <p><a href="completed.html">Past tournaments</a></p>
-<p><a href="tips.html">Tips</a></p>
-    <p><a href="deposit.html">Deposit</a></p>
-    <p id="admin-link" hidden><a href="admin.html">Admin</a></p>
-    <p><button type="button" id="logout-button">Log out</button></p>
+    <p id="welcome" class="welcome"></p>
   </div>
+</main>
+
+  <footer class="home-footer">
+        <a class="wa-link" href="https://chat.whatsapp.com/BImgsKFvlIdAs4d4cKB0gl?s=cl&p=a&mlu=4&ilr=4" target="_blank" rel="noopener noreferrer">
+       
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 21l1.65 -3.8a9 9 0 1 1 3.4 2.9l-5.05 .9" />
+        <path d="M9 10a.5 .5 0 0 0 1 0v-1a.5 .5 0 0 0 -1 0v1a5 5 0 0 0 5 5h1a.5 .5 0 0 0 0 -1h-1a.5 .5 0 0 0 0 1" />
+      </svg>
+            <span>Join our WhatsApp Community</span>
+    </a>
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -52,17 +68,13 @@
       document.getElementById("welcome").textContent =
         "Welcome back, " + (profile ? profile.username : "player") + "!";
 
-      if (profile && profile.is_admin) {
-        document.getElementById("admin-link").hidden = false;
-      }
+
     }
 
-    document.getElementById("logout-button").addEventListener("click", async () => {
-      await db.auth.signOut();
-      window.location.reload();
-    });
+   
 
     init();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

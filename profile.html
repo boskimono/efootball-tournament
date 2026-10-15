@@ -4,40 +4,60 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Profile - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>My profile</h1>
-  <p><a href="index.html">Home</a></p>
-  <p>Email: <span id="email"></span></p>
-  <p>Username: <span id="username"></span></p>
-  <p>WhatsApp: <span id="whatsapp"></span></p>
-  <p>Wallet balance: ₦<span id="balance">0</span></p>
-  <p><a href="deposit.html">Deposit</a></p>
-  <p><a href="contest.html">Contest</a></p>
-  <h2>Wallet history</h2>
-<div id="wallet-history"></div>
-  <p id="message"></p>
-  <button id="logout-button">Log out</button>
+    <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <div> 
-    <h2>Change username</h2>
-    <form id="username-form">
-    <input id="new-username" type="text" minlength="3" maxlength="20" required />
-    <button type="submit">Change username</button>
-    </form>
-    <p id="username-message"></p>
-    </div>
+  <main class="stack">
+    <h1>My profile</h1>
 
-<div>
-  <h2>Change PIN</h2>
-  <form id="pin-form">
-    <label>Current PIN <input id="current-pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <label>New PIN <input id="new-pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <label>Re-enter new PIN <input id="new-pin2" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <button type="submit">Change PIN</button>
-  </form>
-  <p id="pin-message"></p>
-</div>
+    <section class="card wallet-card">
+      <p class="wallet-label">Wallet balance</p>
+      <p class="wallet-balance">₦<span id="balance">0</span></p>
+      <a class="btn btn-primary" href="deposit.html">Deposit</a>
+    </section>
+
+    <section class="card">
+      <h2>Account</h2>
+      <dl class="details">
+        <dt>Email</dt><dd id="email"></dd>
+        <dt>Username</dt><dd id="username"></dd>
+        <dt>WhatsApp</dt><dd id="whatsapp"></dd>
+      </dl>
+      <p id="message" class="message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Wallet history</h2>
+      <div id="wallet-history"></div>
+    </section>
+
+    <section class="card">
+      <h2>Change username</h2>
+      <form id="username-form" class="form">
+        <label>New username <input id="new-username" type="text" minlength="3" maxlength="20" required></label>
+        <button type="submit" class="btn btn-primary">Change username</button>
+      </form>
+      <p id="username-message" class="message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Change PIN</h2>
+      <form id="pin-form" class="form">
+        <label>Current PIN <input id="current-pin" type="password" inputmode="numeric" maxlength="6" required></label>
+        <label>New PIN <input id="new-pin" type="password" inputmode="numeric" maxlength="6" required></label>
+        <label>Re-enter new PIN <input id="new-pin2" type="password" inputmode="numeric" maxlength="6" required></label>
+        <button type="submit" class="btn btn-primary">Change PIN</button>
+      </form>
+      <p id="pin-message" class="message"></p>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -74,17 +94,33 @@ async function loadWalletHistory(userId) {
     return;
   }
 
-  data.forEach((row) => {
+    data.forEach((row) => {
     const when = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
-    const sign = row.amount > 0 ? "+" : "-";
-    let text =
-      when + " - " + (typeLabels[row.type] || row.type) + " - " + sign + "₦" +
-      Math.abs(row.amount).toLocaleString("en-NG");
-    if (row.note) {
-      text += " - " + row.note;
-    }
-    const line = document.createElement("p");
-    line.textContent = text;
+
+    const line = document.createElement("div");
+    line.className = "history-row";
+
+    const main = document.createElement("div");
+    main.className = "history-main";
+
+    const title = document.createElement("span");
+    title.className = "history-title";
+    title.textContent = typeLabels[row.type] || row.type;
+
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = when + (row.note ? " - " + row.note : "");
+
+    main.appendChild(title);
+    main.appendChild(meta);
+
+    const amount = document.createElement("span");
+    amount.className = "amount " + (row.amount > 0 ? "amount-in" : "amount-out");
+    amount.textContent =
+      (row.amount > 0 ? "+" : "-") + "₦" + Math.abs(row.amount).toLocaleString("en-NG");
+
+    line.appendChild(main);
+    line.appendChild(amount);
     list.appendChild(line);
   });
 }
@@ -123,10 +159,7 @@ document.getElementById("balance").textContent = balance.toLocaleString("en-NG")
 await loadWalletHistory(user.id);
     }
 
-    document.getElementById("logout-button").addEventListener("click", async () => {
-      await db.auth.signOut();
-      window.location.href = "login.html";
-    });
+   
    
 
 document.getElementById("username-form").addEventListener("submit", async (event) => {
@@ -159,7 +192,7 @@ document.getElementById("pin-form").addEventListener("submit", async (event) => 
   const box = document.getElementById("pin-message");
 
   if (!/^[0-9]{6}$/.test(newPin)) {
-    box.textContent = "PIN must be 6 digits.";
+    box.textContent = "PIN must be exactly 6 digits.";
     return;
   }
   if (newPin !== newPin2) {
@@ -180,5 +213,6 @@ document.getElementById("pin-form").addEventListener("submit", async (event) => 
 
     loadProfile();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

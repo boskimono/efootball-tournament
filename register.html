@@ -4,22 +4,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Register - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Join Broskis Gaming Hub</h1>
+   <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <form id="register-form">
-    <label>Email <input id="email" type="email" required></label><br>
-    <label>Username <input id="username" type="text" minlength="3" maxlength="20" required></label><br>
-    <label>WhatsApp number <input id="whatsapp" type="tel" required></label><br>
-    <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <label>Re-enter PIN <input id="pin2" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <button type="submit">Create account</button>
-  </form>
+  <main class="auth card">
+    <h1>Join Broskis Gaming Hub</h1>
 
-  <p id="message"></p>
-  <p>Already have an account? <a href="login.html">Log in</a></p>
-<p><a href="index.html">Home</a></p>
+    <form id="register-form" class="form">
+      <label>Email <input id="email" type="email" required></label>
+      <label>Username <input id="username" type="text" minlength="3" maxlength="20" required></label>
+      <label>WhatsApp number <input id="whatsapp" type="tel" required></label>
+      <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label>
+      <label>Re-enter PIN <input id="pin2" type="password" inputmode="numeric" maxlength="6" required></label>
+      <button type="submit" class="btn btn-primary">Create Account</button>
+    </form>
+
+    <p id="message" class="message"></p>
+    <p class="muted">Already have an account? <a href="login.html">Log in</a></p>
+  </main>
+
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -73,5 +83,6 @@
             setTimeout(() => { window.location.href = "profile.html"; }, 1500);
     });
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

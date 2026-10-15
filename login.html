@@ -4,20 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Log in - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Log in</h1>
+    <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <form id="login-form">
-    <label>Email <input id="email" type="email" required></label><br>
-    <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label><br>
-    <button type="submit">Log in</button>
-  </form>
+  <main class="auth card">
+    <h1>Log in</h1>
 
-  <p id="message"></p>
-  <p>No account yet? <a href="register.html">Register</a></p>
-<p><a href="index.html">Home</a></p>
-  <button id="logout-button" hidden>Log out</button>
+    <form id="login-form" class="form">
+      <label>Email <input id="email" type="email" required></label>
+      <label>6-digit PIN <input id="pin" type="password" inputmode="numeric" maxlength="6" required></label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+    </form>
+
+    <p id="message" class="message"></p>
+    <p class="muted">No account yet? <a href="register.html">Register</a></p>
+  </main>
+
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -25,17 +34,15 @@
     const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const form = document.getElementById("login-form");
+        const form = document.getElementById("login-form");
     const message = document.getElementById("message");
-    const logoutButton = document.getElementById("logout-button");
 
     async function showState() {
       const { data } = await db.auth.getSession();
       if (data.session) {
-        message.textContent = "Logged in as " + data.session.user.email;
-        logoutButton.hidden = false;
-      } else {
-        logoutButton.hidden = true;
+        message.textContent =
+          "You are already logged in as " + data.session.user.email +
+          ". Use Log out in the menu to switch accounts.";
       }
     }
 
@@ -56,13 +63,10 @@
       window.location.href = "profile.html";
     });
 
-    logoutButton.addEventListener("click", async () => {
-      await db.auth.signOut();
-      message.textContent = "Logged out.";
-      showState();
-    });
+
 
     showState();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

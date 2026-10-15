@@ -4,29 +4,57 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Deposit - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Deposit</h1>
-  <p><a href="profile.html">Back to profile</a></p>
+     <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <h2>Step 1: Choose amount</h2>
-  <label>Amount (₦1,000 to ₦10,000)
-    <input id="amount" type="number" min="1000" max="10000" step="1">
-  </label>
+  <main class="stack">
+    <h1>Deposit</h1>
 
-  <h2>Step 2: Transfer to this account</h2>
-  <p>Bank: <span id="bank-name"></span></p>
-  <p>Account name: <span id="account-name"></span></p>
-  <p>Account number: <span id="account-number"></span>
-    <button type="button" id="copy-number">Copy</button></p>
+    <section class="card">
+      <h2 class="step-title"><span class="step-num">1</span> Choose amount</h2>
+      <div class="form">
+        <label>Amount (₦1,000 to ₦10,000)
+          <input id="amount" type="number" min="1000" max="10000" step="1" inputmode="numeric">
+        </label>
+      </div>
+    </section>
 
-  <h2>Step 3: Attach your receipt</h2>
-  <input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf">
+    <section class="card">
+      <h2 class="step-title"><span class="step-num">2</span> Transfer to this account</h2>
+      <dl class="details">
+        <dt>Bank</dt><dd id="bank-name"></dd>
+        <dt>Account name</dt><dd id="account-name"></dd>
+      </dl>
+      <div class="copy-row">
+        <span id="account-number" class="account-number"></span>
+        <button type="button" id="copy-number" class="btn btn-secondary btn-small">Copy</button>
+      </div>
+    </section>
 
-  <p><button type="button" id="done-button">Done</button></p>
-  <p id="message"></p>
-  <h2>My deposits</h2>
-<div id="deposit-list"></div>
+    <section class="card">
+      <h2 class="step-title"><span class="step-num">3</span> Attach your receipt</h2>
+      <div class="form">
+        <label>Receipt (JPG, PNG or PDF, up to 5 MB)
+          <input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf">
+        </label>
+      </div>
+    </section>
+
+    <button type="button" id="done-button" class="btn btn-primary">Done</button>
+    <p id="message" class="message"></p>
+
+    <section class="card">
+      <h2>My deposits</h2>
+      <div id="deposit-list"></div>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -57,14 +85,36 @@ async function loadDeposits() {
     return;
   }
 
-  data.forEach((row) => {
-    const line = document.createElement("p");
+    data.forEach((row) => {
     const date = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
-    let text = "₦" + row.amount.toLocaleString("en-NG") + " - " + row.status + " - " + date;
+
+    const line = document.createElement("div");
+    line.className = "history-row";
+
+    const main = document.createElement("div");
+    main.className = "history-main";
+
+    const title = document.createElement("span");
+    title.className = "history-title";
+    title.textContent = "₦" + row.amount.toLocaleString("en-NG");
+
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    let metaText = date;
     if (row.status === "rejected" && row.rejection_reason) {
-      text += " (Reason: " + row.rejection_reason + ")";
+      metaText += " - Reason: " + row.rejection_reason;
     }
-    line.textContent = text;
+    meta.textContent = metaText;
+
+    main.appendChild(title);
+    main.appendChild(meta);
+
+    const badge = document.createElement("span");
+    badge.className = "badge badge-" + row.status;
+    badge.textContent = row.status.charAt(0).toUpperCase() + row.status.slice(1);
+
+    line.appendChild(main);
+    line.appendChild(badge);
     list.appendChild(line);
   });
 }
@@ -139,8 +189,7 @@ async function loadDeposits() {
         return;
       }
 
-      message.textContent = "Submitted! Your deposit will be credited once it is confirmed.";
-      await loadDeposits();
+      message.textContent = "Submitted! The moderator will credit your wallet within 48 hours of the money arriving.";      await loadDeposits();
       document.getElementById("amount").value = "";
       document.getElementById("receipt").value = "";
       doneButton.disabled = false;
@@ -148,5 +197,6 @@ async function loadDeposits() {
 
     init();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

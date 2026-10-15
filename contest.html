@@ -3,35 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Contest - Broskis Gaming Hub</title>
+  <title>Contests - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <p><a href="index.html">Home</a> | <a href="profile.html">Profile</a> | <a href="deposit.html">Deposit</a> | <a href="completed.html">Past tournaments</a></p>
+  <nav id="nav"><a href="index.html">Home</a></nav>
 
   <h1 id="tournament-name">Loading...</h1>
-  <p id="tournament-status"></p>
-  <p id="tournament-info"></p>
+  <p><span id="tournament-status" class="badge"></span></p>
+  <p id="tournament-info" class="muted"></p>
 
-  <h2>Prizes</h2>
-  <div id="prize-list"></div>
-  <p id="prize-total"></p>
-  <p id="money-summary"></p>
+  <section class="card">
+    <h2>Prizes</h2>
+    <div id="prize-list"></div>
+    <p id="prize-total" class="prize-total"></p>
+    <p id="money-summary" class="muted small"></p>
+  </section>
 
   <h2>Teams</h2>
-  <p id="entry-count"></p>
-  <p id="wallet-line"></p>
+  <p id="entry-count" class="muted"></p>
+  <p id="wallet-line" class="wallet-line"></p>
   <p id="login-hint" hidden><a href="login.html">Log in</a> to enter the tournament.</p>
-  <div id="team-list"></div>
+  <div id="team-list" class="team-grid"></div>
 
-<p id="rules-box" hidden>
-  <label>
-    <input type="checkbox" id="accept-rules">
-    I have read and accept the <a href="rules.html" target="_blank">tournament rules</a>.
-  </label>
-</p>
+  <p id="rules-box" class="rules-box" hidden>
+    <label>
+      <input type="checkbox" id="accept-rules">
+      I have read and accept the <a href="rules.html" target="_blank">tournament rules</a>.
+    </label>
+  </p>
 
-  <p><button type="button" id="enter-button" disabled>Enter</button></p>
-  <p id="message"></p>
+  <button type="button" id="enter-button" class="btn btn-primary" disabled>Enter</button>
+  <p id="message" class="message"></p>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -79,15 +87,22 @@ acceptBox.addEventListener("change", () => updateButton());
 
       list.textContent = "";
       let total = 0;
-      data.forEach((prize) => {
+            data.forEach((prize) => {
         total += prize.amount * prize.quantity;
-        let text = prize.label + ": " + naira(prize.amount);
-        if (prize.quantity > 1) {
-          text += " x " + prize.quantity;
-        }
-        const line = document.createElement("p");
-        line.textContent = text;
-        list.appendChild(line);
+
+        const row = document.createElement("div");
+        row.className = "prize-row";
+
+        const name = document.createElement("span");
+        name.textContent = prize.label;
+
+        const amount = document.createElement("span");
+        amount.textContent =
+          naira(prize.amount) + (prize.quantity > 1 ? " x " + prize.quantity : "");
+
+        row.appendChild(name);
+        row.appendChild(amount);
+        list.appendChild(row);
       });
 
       document.getElementById("prize-total").textContent = "Total prize money: " + naira(total);
@@ -152,43 +167,49 @@ acceptBox.addEventListener("change", () => updateButton());
       selectedTeamName = "";
       list.textContent = "";
 
-      teams.forEach((team) => {
-        const card = document.createElement("div");
+            teams.forEach((team) => {
+        const mine = Boolean(myEntry && myEntry.team_id === team.id);
+        const isTaken = taken.has(team.id);
+        const pickable = canPick && !isTaken;
 
-        if (canPick && !taken.has(team.id)) {
+        const tile = document.createElement(pickable ? "label" : "div");
+        tile.className = "team " + (mine ? "team-mine" : isTaken ? "team-taken" : "team-available");
+        tile.title = team.name;
+
+        if (pickable) {
           const radio = document.createElement("input");
           radio.type = "radio";
           radio.name = "team";
           radio.value = team.id;
           radio.addEventListener("change", () => {
+            document.querySelectorAll(".team.selected").forEach((el) => el.classList.remove("selected"));
+            tile.classList.add("selected");
             selectedTeamId = team.id;
             selectedTeamName = team.name;
             updateButton();
           });
-          card.appendChild(radio);
+          tile.appendChild(radio);
         }
 
         if (team.logo_path) {
           const logo = document.createElement("img");
+          logo.className = "team-logo";
           logo.src = db.storage.from("club-logos").getPublicUrl(team.logo_path).data.publicUrl;
           logo.alt = team.name;
-          logo.width = 48;
-          logo.height = 48;
-          card.appendChild(logo);
+          tile.appendChild(logo);
         }
 
-        let state = "Available";
-        if (myEntry && myEntry.team_id === team.id) {
-          state = "Your team";
-        } else if (taken.has(team.id)) {
-          state = "Taken";
-        }
+        const code = document.createElement("span");
+        code.className = "team-code";
+        code.textContent = team.short_name;
+        tile.appendChild(code);
 
-        const label = document.createElement("span");
-        label.textContent = " " + team.name + " - " + state;
-        card.appendChild(label);
+        const state = document.createElement("span");
+        state.className = "team-state";
+        state.textContent = mine ? "Your team" : isTaken ? "Taken" : "Available";
+        tile.appendChild(state);
 
-        list.appendChild(card);
+        list.appendChild(tile);
       });
     }
 
@@ -269,8 +290,9 @@ acceptBox.addEventListener("change", () => updateButton());
 
       currentTournament = tournament;
       document.getElementById("tournament-name").textContent = tournament.name;
-      document.getElementById("tournament-status").textContent =
-        "Status: " + statusText[tournament.status];
+            const badge = document.getElementById("tournament-status");
+      badge.textContent = statusText[tournament.status];
+      badge.className = "badge badge-" + tournament.status;
       document.getElementById("tournament-info").textContent =
         "Entry fee: " + naira(tournament.entry_fee) + " | Teams: " + tournament.max_teams;
 
@@ -280,5 +302,6 @@ acceptBox.addEventListener("change", () => updateButton());
 
     init();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

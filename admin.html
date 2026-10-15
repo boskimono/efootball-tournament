@@ -4,18 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Admin</h1>
-  <p><a href="profile.html">Back to profile</a></p>
+   <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <h2>Pending deposits</h2>
-  <p id="message"></p>
-  <div id="pending-list"></div>
-  <h2>Tournaments</h2>
-<div id="tournament-list"></div>
-  <h2>Players</h2>
-<div id="player-list"></div>
+  <main class="stack">
+    <h1>Admin</h1>
+    <p id="message" class="admin-message"></p>
+
+    <section class="card">
+      <h2>Pending deposits</h2>
+      <div id="pending-list" class="admin-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Tournaments</h2>
+      <div id="tournament-list" class="admin-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Players</h2>
+      <div id="player-list" class="admin-list"></div>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -83,6 +100,7 @@ approveButton.addEventListener("click", async () => {
   }
   message.textContent = "Approved ₦" + row.amount.toLocaleString("en-NG") + " for " + row.profiles.username + ".";
   await loadPending();
+    await loadPlayers();
 });
 box.appendChild(approveButton);
 
@@ -497,7 +515,29 @@ box.appendChild(cancelButton);
       await loadPlayers();
     }
 
+    const buttonStyles = {
+      "Approve": "btn-approve",
+      "Reject": "btn-danger-outline",
+      "Cancel tournament": "btn-danger",
+      "Serious suspension": "btn-danger",
+      "Suspend (weeks)": "btn-danger-outline",
+      "Open registration": "btn-primary",
+      "Mark completed": "btn-primary"
+    };
+
+    function styleAdminButtons() {
+      document.querySelectorAll(".admin-list button").forEach((button) => {
+        if (button.dataset.styled) return;
+        const kind = buttonStyles[button.textContent] || "btn-secondary";
+        button.className = "btn btn-small " + kind;
+        button.dataset.styled = "yes";
+      });
+    }
+
+    new MutationObserver(styleAdminButtons).observe(document.body, { childList: true, subtree: true });
+
     init();
   </script>
+  <script src="nav.js"></script>
 </body>
 </html>

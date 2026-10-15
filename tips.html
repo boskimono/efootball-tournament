@@ -4,12 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tips - Broskis Gaming Hub</title>
+    <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <p><a href="index.html">Home</a> | <a href="rules.html">Rules and FAQ</a> | <a href="contest.html">Contest</a></p>
+  <nav id="nav"><a href="index.html">Home</a></nav>
 
-  <h1>Tips</h1>
-  <div id="tips"></div>
+  <main class="stack">
+    <h1>Tips</h1>
+    <div id="tips" class="stack"></div>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
@@ -37,18 +45,25 @@
         return;
       }
 
-      data.forEach((item) => {
+            data.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "card tip";
+
         const h = document.createElement("h3");
         h.textContent = item.title;
+
         const p = document.createElement("p");
-        p.style.whiteSpace = "pre-line";
+        p.className = "prose";
         p.textContent = item.body;
-        box.appendChild(h);
-        box.appendChild(p);
+
+        card.appendChild(h);
+        card.appendChild(p);
+        box.appendChild(card);
       });
     }
 
     init();
   </script>
+    <script src="nav.js"></script>
 </body>
 </html>
