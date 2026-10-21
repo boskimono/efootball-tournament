@@ -29,6 +29,35 @@
     </section>
 
     <section class="card">
+      <h2>Walkover claims</h2>
+      <p id="claims-summary" class="muted small"></p>
+      <div id="claims-list" class="results-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Results</h2>
+      <div class="gw-controls">
+        <select id="res-tournament" aria-label="Choose tournament"></select>
+        <select id="res-gw" aria-label="Choose gameweek"></select>
+      </div>
+      <p id="res-summary" class="muted small"></p>
+      <p><button type="button" id="settle-now" class="btn btn-secondary btn-small">Run settlement now</button></p>
+      <div id="results-list" class="results-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Withdrawals</h2>
+      <p id="withdrawals-summary" class="muted small"></p>
+      <div id="withdrawals-list" class="results-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Prizes</h2>
+      <p id="prizes-summary" class="muted small"></p>
+      <div id="prizes-list" class="results-list"></div>
+    </section>
+
+    <section class="card">
       <h2>Players</h2>
       <div id="player-list" class="admin-list"></div>
     </section>
@@ -264,11 +293,71 @@ async function setTournamentStatus(t, newStatus, question) {
   await loadTournaments();
 }
 
+function makeFixturesButton(t, label) {
+  const button = document.createElement("button");
+  button.textContent = label;
+  button.addEventListener("click", async () => {
+    const text = prompt(
+      "Date the first window opens (6:00am Lagos time), written YYYY-MM-DD.\nIt must be at least 3 days from today."
+    );
+    if (text === null) return;
+
+    const date = text.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      message.textContent = "Write the date like 2026-12-01.";
+      return;
+    }
+
+    const sure = confirm(
+      label + " for " + t.name + ", first window opening on " + date + "?\n\n" +
+      "The teams will be drawn at random." +
+      (label.startsWith("Regenerate") ? " The existing fixtures will be erased." : "")
+    );
+    if (!sure) return;
+
+    const { data, error } = await db.rpc("admin_generate_fixtures", { p_tournament_id: t.id, p_start_date: date });
+    if (error) {
+      message.textContent = "Could not generate fixtures: " + error.message;
+      return;
+    }
+    message.textContent = "Fixtures created: " + data + " gameweeks.";
+    await loadTournaments();
+  });
+  return button;
+}
+
+function makeDelayButton(t) {
+  const button = document.createElement("button");
+  button.textContent = "Delay fixtures";
+  button.addEventListener("click", async () => {
+    const text = prompt("Delay all upcoming windows by how many days? (1 to 60)");
+    if (text === null) return;
+
+    const days = Number(text);
+    if (!Number.isInteger(days) || days < 1 || days > 60) {
+      message.textContent = "Enter a whole number of days from 1 to 60.";
+      return;
+    }
+
+    const sure = confirm("Delay every upcoming window of " + t.name + " by " + days + " day(s)?");
+    if (!sure) return;
+
+    const { error } = await db.rpc("admin_delay_fixtures", { p_tournament_id: t.id, p_days: days });
+    if (error) {
+      message.textContent = "Could not delay: " + error.message;
+      return;
+    }
+    message.textContent = "All upcoming windows delayed by " + days + " day(s).";
+    await loadTournaments();
+  });
+  return button;
+}
+
 async function loadTournaments() {
   const list = document.getElementById("tournament-list");
   const { data: tournaments, error } = await db
     .from("tournaments")
-    .select("id, name, status, max_teams, entry_fee")
+    .select("id, name, status, max_teams, entry_fee, starts_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -367,6 +456,28 @@ box.appendChild(cancelButton);
         setTournamentStatus(t, "completed", "Mark " + t.name + " as completed?")
       );
       box.appendChild(doneButton);
+    }
+
+        const allEntered = !entriesError && entries.length === t.max_teams;
+    const notStarted = t.starts_at !== null && new Date(t.starts_at) > new Date();
+
+    if (t.status === "registration_open" && allEntered) {
+      box.appendChild(makeFixturesButton(t, "Generate fixtures"));
+    }
+
+    if (t.status === "in_progress" && notStarted) {
+      box.appendChild(makeFixturesButton(t, "Regenerate fixtures"));
+    }
+
+    if (t.status === "in_progress") {
+      box.appendChild(makeDelayButton(t));
+
+      const when = document.createElement("p");
+      when.className = "muted small";
+      when.textContent =
+        "First window opens " +
+        new Date(t.starts_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+      box.appendChild(when);
     }
 
     if (entriesError) {
@@ -492,6 +603,745 @@ box.appendChild(cancelButton);
     list.appendChild(box);
   }
 }
+
+    let resGameweeks = [];
+    let resTeams = {};
+    let resEntries = {};
+
+    function resWhen(value) {
+      return new Date(value).toLocaleString("en-NG", {
+        timeZone: "Africa/Lagos", weekday: "short", day: "numeric",
+        month: "short", hour: "numeric", minute: "2-digit"
+      });
+    }
+
+    function resCode(entryId) {
+      const entry = resEntries[entryId];
+      const team = entry ? resTeams[entry.team_id] : null;
+      return team ? team.short_name : "?";
+    }
+
+    function resUser(entryId) {
+      const entry = resEntries[entryId];
+      return entry ? entry.username : "?";
+    }
+
+    async function decideMatch(m, action, label, needsReason, goals) {
+      const title =
+        resCode(m.home_entry_id) + " (" + resUser(m.home_entry_id) + ") vs " +
+        resCode(m.away_entry_id) + " (" + resUser(m.away_entry_id) + ")";
+
+      let reason = "";
+      if (action !== "reopen") {
+        const typed = prompt(
+          needsReason
+            ? "Reason (required). Both players will see it."
+            : "Reason (optional). Both players will see it. Leave empty for none."
+        );
+        if (typed === null) return;
+        reason = typed.trim();
+        if (needsReason && reason === "") {
+          message.textContent = "A reason is required for this decision.";
+          return;
+        }
+      }
+
+      const sure = confirm(
+        label + "?\n\n" + title + (action === "reopen" ? "" : "\nReason: " + (reason || "(none)"))
+      );
+      if (!sure) return;
+
+      const { error } = await db.rpc("admin_decide_match", {
+        p_match_id: m.id,
+        p_action: action,
+        p_home_goals: goals ? goals[0] : null,
+        p_away_goals: goals ? goals[1] : null,
+        p_reason: reason === "" ? null : reason
+      });
+      if (error) {
+        message.textContent = "Could not save the decision: " + error.message;
+        return;
+      }
+      message.textContent = "Decision saved: " + label + ".";
+      await renderResults();
+    }
+
+    function addProofViewer(card, path, bucket) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-secondary btn-small";
+      button.dataset.styled = "yes";
+      button.textContent = "Show screenshot";
+
+      const holder = document.createElement("div");
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 600);
+        if (error) {
+          holder.textContent = "Could not open the screenshot: " + error.message;
+          button.disabled = false;
+          return;
+        }
+        const link = document.createElement("a");
+        link.href = data.signedUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        const img = document.createElement("img");
+        img.className = "proof";
+        img.src = data.signedUrl;
+        img.alt = "Submitted screenshot";
+        link.appendChild(img);
+        holder.textContent = "";
+        holder.appendChild(link);
+        button.hidden = true;
+      });
+
+      card.append(button, holder);
+    }
+
+    function resButton(label, kind, handler) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-small " + kind;
+      button.dataset.styled = "yes";
+      button.textContent = label;
+      button.addEventListener("click", handler);
+      return button;
+    }
+
+    function buildResultBlock(m, gw, subs, reason) {
+      const block = document.createElement("article");
+      block.className = "result-block";
+
+      const home = m.home_entry_id;
+      const away = m.away_entry_id;
+
+      const title = document.createElement("h3");
+      title.textContent =
+        resCode(home) + " (" + resUser(home) + ") vs " + resCode(away) + " (" + resUser(away) + ")";
+      block.appendChild(title);
+
+      const subHome = subs.find((s) => s.entry_id === home) || null;
+      const subAway = subs.find((s) => s.entry_id === away) || null;
+      const bothSubmitted = subHome !== null && subAway !== null;
+      const agree =
+        bothSubmitted &&
+        subHome.home_goals === subAway.home_goals &&
+        subHome.away_goals === subAway.away_goals;
+
+      const status = document.createElement("p");
+      status.className = "note";
+      if (m.status !== "pending") {
+        status.textContent =
+          "Decided (" + m.result_type + "): " + resCode(home) + " " + m.home_goals + " - " +
+          m.away_goals + " " + resCode(away) + ".";
+      } else if (bothSubmitted) {
+        status.textContent = agree ? "Both submitted. The scores agree." : "Both submitted. The scores DIFFER.";
+      } else if (subHome || subAway) {
+        status.textContent = "Only " + resUser(subHome ? home : away) + " has submitted.";
+      } else {
+        status.textContent = "Nobody has submitted.";
+      }
+      block.appendChild(status);
+
+      if (reason) {
+        const why = document.createElement("p");
+        why.className = "note";
+        why.textContent = "Reason shown to both players: " + reason.reason;
+        block.appendChild(why);
+      }
+
+      const grid = document.createElement("div");
+      grid.className = "sub-grid";
+      [[home, subHome], [away, subAway]].forEach(([entryId, sub]) => {
+        const card = document.createElement("div");
+        card.className = "sub-card";
+
+        const head = document.createElement("strong");
+        head.textContent = resUser(entryId) + (entryId === home ? " (home)" : " (away)");
+        card.appendChild(head);
+
+        if (!sub) {
+          const none = document.createElement("span");
+          none.className = "note";
+          none.textContent = "No submission.";
+          card.appendChild(none);
+        } else {
+          const line = document.createElement("span");
+          line.textContent = resCode(home) + " " + sub.home_goals + " - " + sub.away_goals + " " + resCode(away);
+          const time = document.createElement("span");
+          time.className = "note";
+          time.textContent = "Submitted " + resWhen(sub.created_at);
+          card.append(line, time);
+          addProofViewer(card, sub.screenshot_path, "match-proofs");
+        }
+        grid.appendChild(card);
+      });
+      block.appendChild(grid);
+
+      const now = Date.now();
+      const opened = now >= new Date(gw.opens_at).getTime();
+      const locked = now >= new Date(gw.locks_at).getTime();
+      const windowClosed = now > new Date(gw.closes_at).getTime();
+      const canDecide = opened && !locked && (windowClosed || bothSubmitted);
+
+      const info = document.createElement("p");
+      info.className = "note";
+
+      if (locked) {
+        info.textContent = "Locked. Results can no longer change.";
+        block.appendChild(info);
+      } else if (!opened) {
+        info.textContent = "This gameweek has not opened yet.";
+        block.appendChild(info);
+      } else if (!canDecide) {
+        info.textContent = "The window is still open. You can decide once it closes, or when both players have submitted.";
+        block.appendChild(info);
+      } else {
+        const actions = document.createElement("div");
+        actions.className = "actions-row";
+
+        if (agree) {
+          actions.appendChild(resButton("Confirm agreed score", "btn-approve",
+            () => decideMatch(m, "confirm_home", "Confirm the agreed score", false, null)));
+        } else {
+          if (subHome) {
+            actions.appendChild(resButton("Confirm " + resUser(home) + "'s score", "btn-approve",
+              () => decideMatch(m, "confirm_home", "Confirm " + resUser(home) + "'s score", false, null)));
+          }
+          if (subAway) {
+            actions.appendChild(resButton("Confirm " + resUser(away) + "'s score", "btn-approve",
+              () => decideMatch(m, "confirm_away", "Confirm " + resUser(away) + "'s score", false, null)));
+          }
+        }
+
+        actions.appendChild(resButton("Enter score", "btn-secondary", async () => {
+          const homeText = prompt("Goals for " + resCode(home) + " (home)?");
+          if (homeText === null) return;
+          const awayText = prompt("Goals for " + resCode(away) + " (away)?");
+          if (awayText === null) return;
+          const hg = Number(homeText);
+          const ag = Number(awayText);
+          if (homeText.trim() === "" || awayText.trim() === "" ||
+              !Number.isInteger(hg) || !Number.isInteger(ag) ||
+              hg < 0 || ag < 0 || hg > 30 || ag > 30) {
+            message.textContent = "Goals must be whole numbers from 0 to 30.";
+            return;
+          }
+          await decideMatch(m, "set_score", "Set the score to " + hg + " - " + ag, true, [hg, ag]);
+        }));
+
+        actions.appendChild(resButton("Award 3-0 to " + resUser(home), "btn-secondary",
+          () => decideMatch(m, "award_home", "Award 3-0 to " + resUser(home), true, null)));
+        actions.appendChild(resButton("Award 3-0 to " + resUser(away), "btn-secondary",
+          () => decideMatch(m, "award_away", "Award 3-0 to " + resUser(away), true, null)));
+        actions.appendChild(resButton("Void", "btn-danger-outline",
+          () => decideMatch(m, "void", "Void this match", true, null)));
+
+        if (m.status !== "pending") {
+          actions.appendChild(resButton("Reopen", "btn-secondary",
+            () => decideMatch(m, "reopen", "Reopen this match", false, null)));
+        }
+        block.appendChild(actions);
+      }
+
+      return block;
+    }
+
+    async function renderResults() {
+      const list = document.getElementById("results-list");
+      const summary = document.getElementById("res-summary");
+      const gw = resGameweeks[Number(document.getElementById("res-gw").value)];
+      list.textContent = "";
+      if (!gw) return;
+
+      const { data: matchRows, error } = await db
+        .from("matches")
+        .select("*")
+        .eq("gameweek_id", gw.id)
+        .order("id", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load matches: " + error.message;
+        return;
+      }
+
+      const ids = matchRows.map((m) => m.id);
+      const { data: subs } = await db.from("match_submissions").select("*").in("match_id", ids);
+      const { data: reasons } = await db.from("match_reasons").select("*").in("match_id", ids);
+
+      const pending = matchRows.filter((m) => m.status === "pending").length;
+      summary.textContent =
+        "Opens " + resWhen(gw.opens_at) + " | Closes " + resWhen(gw.closes_at) +
+        " | Locks " + resWhen(gw.locks_at) + " | " + pending + " of " + matchRows.length +
+        " matches undecided" + (gw.settled_at ? " | Settled " + resWhen(gw.settled_at) : "");
+
+      matchRows.forEach((m) => {
+        const mySubs = (subs || []).filter((s) => s.match_id === m.id);
+        const reason = (reasons || []).find((r) => r.match_id === m.id) || null;
+        list.appendChild(buildResultBlock(m, gw, mySubs, reason));
+      });
+    }
+
+    async function loadResultsGameweeks() {
+      const tournamentId = Number(document.getElementById("res-tournament").value);
+
+      const { data: gws, error } = await db
+        .from("gameweeks")
+        .select("*")
+        .eq("tournament_id", tournamentId)
+        .order("number", { ascending: true });
+
+      if (error) {
+        document.getElementById("results-list").textContent = "Could not load gameweeks: " + error.message;
+        return;
+      }
+      resGameweeks = gws;
+
+      const { data: teams } = await db
+        .from("tournament_teams")
+        .select("id, short_name")
+        .eq("tournament_id", tournamentId);
+      resTeams = {};
+      (teams || []).forEach((t) => { resTeams[t.id] = t; });
+
+      const { data: entries } = await db.rpc("tournament_entry_list", { p_tournament_id: tournamentId });
+      resEntries = {};
+      (entries || []).forEach((e) => { resEntries[e.entry_id] = e; });
+
+      const select = document.getElementById("res-gw");
+      select.textContent = "";
+      let start = 0;
+      gws.forEach((gw, i) => {
+        const option = document.createElement("option");
+        option.value = String(i);
+        option.textContent = "Gameweek " + gw.number;
+        select.appendChild(option);
+        if (new Date(gw.opens_at) <= new Date()) start = i;
+      });
+      select.value = String(start);
+      select.onchange = renderResults;
+
+      await renderResults();
+    }
+
+    async function loadResultsPanel() {
+      const select = document.getElementById("res-tournament");
+      const { data, error } = await db
+        .from("tournaments")
+        .select("id, name")
+        .eq("status", "in_progress")
+        .order("created_at", { ascending: false });
+
+      select.textContent = "";
+      if (error || data.length === 0) {
+        document.getElementById("results-list").textContent = "No tournament is in progress.";
+        return;
+      }
+      data.forEach((t) => {
+        const option = document.createElement("option");
+        option.value = String(t.id);
+        option.textContent = t.name;
+        select.appendChild(option);
+      });
+      select.onchange = loadResultsGameweeks;
+      await loadResultsGameweeks();
+    }
+
+    function claimLine(parent, text) {
+      const p = document.createElement("p");
+      p.className = "note";
+      p.textContent = text;
+      parent.appendChild(p);
+    }
+
+    async function decideClaim(c, action, label) {
+      const typed = prompt("Reason (required). Both players will see it.");
+      if (typed === null) return;
+      const reason = typed.trim();
+      if (reason === "") {
+        message.textContent = "A reason is required for this decision.";
+        return;
+      }
+
+      const sure = confirm(label + "?\n\nReason: " + reason);
+      if (!sure) return;
+
+      const { error } = await db.rpc("admin_decide_claim", { p_claim_id: c.id, p_action: action, p_reason: reason });
+      if (error) {
+        message.textContent = "Could not save the decision: " + error.message;
+        return;
+      }
+      message.textContent = "Decision saved: " + label + ".";
+      await loadClaims();
+      await renderResults();
+    }
+
+    function buildClaimBlock(c, m, gw, items, subs, names) {
+      const block = document.createElement("article");
+      block.className = "result-block";
+
+      const who = (entryId) =>
+        names[entryId] ? names[entryId].user + " (" + names[entryId].code + ")" : "?";
+
+      const title = document.createElement("h3");
+      title.textContent = who(c.claimant_entry_id) + " vs " + who(c.accused_entry_id);
+      block.appendChild(title);
+
+      const kindText = c.kind === "quit"
+        ? "says the opponent quit during the match"
+        : "says the opponent did not reply or turn up";
+      claimLine(block,
+        "Gameweek " + gw.number + ". " + who(c.claimant_entry_id) + " " + kindText +
+        ". Filed " + resWhen(c.created_at) + ".");
+      claimLine(block,
+        "Window closes " + resWhen(gw.closes_at) + ". Locks " + resWhen(gw.locks_at) + ".");
+
+      const accusedSubmitted = subs.some(
+        (s) => s.match_id === m.id && s.entry_id === c.accused_entry_id
+      );
+      if (accusedSubmitted) {
+        claimLine(block, "The accused player HAS submitted a result for this match.");
+      }
+      if (m.status !== "pending") {
+        claimLine(block, "This match is already decided (" + m.result_type + ").");
+      }
+
+      const mine = items.filter((e) => e.claim_id === c.id);
+      const attempts = mine.filter((e) => e.evidence_kind === "attempt");
+      const matchShots = mine.filter((e) => e.evidence_kind === "match");
+      const replies = mine.filter((e) => e.evidence_kind === "reply");
+
+      const claimantHead = document.createElement("strong");
+      claimantHead.textContent = "Evidence from " + who(c.claimant_entry_id);
+      block.appendChild(claimantHead);
+
+      const grid = document.createElement("div");
+      grid.className = "sub-grid";
+      attempts.forEach((e, i) => {
+        const cardEl = document.createElement("div");
+        cardEl.className = "sub-card";
+        const head = document.createElement("strong");
+        head.textContent =
+          "Attempt " + (i + 1) + ": " + resWhen(e.attempted_at) + " (" +
+          (e.channel === "private" ? "private message" : "group message") + ")";
+        cardEl.appendChild(head);
+        addProofViewer(cardEl, e.screenshot_path, "claim-proofs");
+        grid.appendChild(cardEl);
+      });
+      matchShots.forEach((e) => {
+        const cardEl = document.createElement("div");
+        cardEl.className = "sub-card";
+        const head = document.createElement("strong");
+        head.textContent = "Screenshot of the match";
+        cardEl.appendChild(head);
+        addProofViewer(cardEl, e.screenshot_path, "claim-proofs");
+        grid.appendChild(cardEl);
+      });
+      block.appendChild(grid);
+
+      const accusedHead = document.createElement("strong");
+      accusedHead.textContent = "Reply from " + who(c.accused_entry_id);
+      block.appendChild(accusedHead);
+
+      if (replies.length === 0) {
+        claimLine(block, "No reply yet.");
+      } else {
+        const noteRow = replies.find((r) => r.note);
+        claimLine(block, noteRow ? "Their note: " + noteRow.note : "They sent no note.");
+        const replyGrid = document.createElement("div");
+        replyGrid.className = "sub-grid";
+        replies.forEach((e, i) => {
+          const cardEl = document.createElement("div");
+          cardEl.className = "sub-card";
+          const head = document.createElement("strong");
+          head.textContent = "Reply screenshot " + (i + 1);
+          cardEl.appendChild(head);
+          addProofViewer(cardEl, e.screenshot_path, "claim-proofs");
+          replyGrid.appendChild(cardEl);
+        });
+        block.appendChild(replyGrid);
+      }
+
+      const now = Date.now();
+      const closes = new Date(gw.closes_at).getTime();
+      const locks = new Date(gw.locks_at).getTime();
+
+      if (now >= locks) {
+        claimLine(block, "Locked. This claim can no longer be decided.");
+        return block;
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "actions-row";
+
+      const canUphold = now > closes && !accusedSubmitted && m.status === "pending";
+      if (canUphold) {
+        actions.appendChild(resButton(
+          "Uphold: award 3-0 to " + names[c.claimant_entry_id].user, "btn-approve",
+          () => decideClaim(c, "uphold", "Uphold the claim")
+        ));
+      } else if (accusedSubmitted) {
+        claimLine(block, "Cannot uphold: the accused submitted a result. Dismiss this claim and decide the match from the Results card.");
+      } else if (now <= closes) {
+        claimLine(block, "Cannot uphold yet: claims can be upheld once the window has closed.");
+      } else {
+        claimLine(block, "Cannot uphold: this match is already decided.");
+      }
+
+      actions.appendChild(resButton(
+        "Dismiss", "btn-danger-outline",
+        () => decideClaim(c, "dismiss", "Dismiss the claim")
+      ));
+      block.appendChild(actions);
+
+      return block;
+    }
+
+    async function loadClaims() {
+      const list = document.getElementById("claims-list");
+      const summary = document.getElementById("claims-summary");
+      list.textContent = "";
+
+      const { data: claimRows, error } = await db
+        .from("walkover_claims")
+        .select("*")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load claims: " + error.message;
+        return;
+      }
+
+      summary.textContent = claimRows.length + " pending claim(s)";
+      if (claimRows.length === 0) {
+        list.textContent = "No pending claims.";
+        return;
+      }
+
+      const matchIds = [...new Set(claimRows.map((c) => c.match_id))];
+      const { data: matchRows } = await db.from("matches").select("*").in("id", matchIds);
+      const gwIds = [...new Set((matchRows || []).map((m) => m.gameweek_id))];
+      const { data: gwRows } = await db.from("gameweeks").select("*").in("id", gwIds);
+      const { data: items } = await db
+        .from("claim_evidence")
+        .select("*")
+        .in("claim_id", claimRows.map((c) => c.id))
+        .order("attempted_at", { ascending: true });
+      const { data: subs } = await db
+        .from("match_submissions")
+        .select("match_id, entry_id")
+        .in("match_id", matchIds);
+
+      const names = {};
+      const tournamentIds = [...new Set((matchRows || []).map((m) => m.tournament_id))];
+      for (const tid of tournamentIds) {
+        const { data: teams } = await db
+          .from("tournament_teams")
+          .select("id, short_name")
+          .eq("tournament_id", tid);
+        const { data: entries } = await db.rpc("tournament_entry_list", { p_tournament_id: tid });
+        const codes = {};
+        (teams || []).forEach((t) => { codes[t.id] = t.short_name; });
+        (entries || []).forEach((e) => {
+          names[e.entry_id] = { user: e.username, code: codes[e.team_id] || "?" };
+        });
+      }
+
+      claimRows.forEach((c) => {
+        const m = (matchRows || []).find((x) => x.id === c.match_id);
+        const gw = m ? (gwRows || []).find((g) => g.id === m.gameweek_id) : null;
+        if (!m || !gw) return;
+        list.appendChild(buildClaimBlock(c, m, gw, items || [], subs || [], names));
+      });
+    }
+
+    document.getElementById("settle-now").addEventListener("click", async () => {
+      const { data, error } = await db.rpc("admin_run_settlement");
+      if (error) {
+        message.textContent = "Could not run settlement: " + error.message;
+        return;
+      }
+      message.textContent = data;
+      await loadTournaments();
+      await renderResults();
+      await loadClaims();
+      await loadPrizes();
+    });
+
+    async function resolvePrize(award, action, label) {
+      const sure = confirm(
+        label + "?\n\n" + award.profiles.username + ": " + award.label +
+        " (₦" + award.amount.toLocaleString("en-NG") + ")" +
+        (action === "forfeit" ? "\n\nThe money stays with you and is not given to anyone else." : "")
+      );
+      if (!sure) return;
+
+      const { error } = await db.rpc("admin_resolve_prize", { p_award_id: award.id, p_action: action });
+      if (error) {
+        message.textContent = "Could not save: " + error.message;
+        return;
+      }
+      message.textContent = "Done: " + label + ".";
+      await loadPrizes();
+      await loadPlayers();
+    }
+
+    async function loadPrizes() {
+      const list = document.getElementById("prizes-list");
+      const summary = document.getElementById("prizes-summary");
+      list.textContent = "";
+
+      const { data, error } = await db
+        .from("prize_awards")
+        .select("id, label, amount, status, created_at, tournaments(name), profiles(username), tournament_entries(tournament_teams(short_name))")
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) {
+        list.textContent = "Could not load prizes: " + error.message;
+        return;
+      }
+
+      const frozen = data.filter((a) => a.status === "frozen").length;
+      summary.textContent = data.length + " award(s)" + (frozen ? " | " + frozen + " frozen" : "");
+
+      if (data.length === 0) {
+        list.textContent = "No prizes have been awarded yet.";
+        return;
+      }
+
+      const statusText = {
+        credited: "Credited to wallet",
+        frozen: "FROZEN (serious suspension)",
+        released: "Released and credited",
+        forfeited: "Forfeited"
+      };
+
+      data.sort((a, b) => (b.status === "frozen") - (a.status === "frozen"));
+
+      data.forEach((a) => {
+        const row = document.createElement("div");
+        row.className = "history-row";
+
+        const main = document.createElement("div");
+        main.className = "history-main";
+
+        const team = a.tournament_entries && a.tournament_entries.tournament_teams
+          ? a.tournament_entries.tournament_teams.short_name
+          : "?";
+
+        const title = document.createElement("span");
+        title.className = "history-title";
+        title.textContent = a.profiles.username + " (" + team + ") - " + a.label;
+
+        const meta = document.createElement("span");
+        meta.className = "history-meta";
+        meta.textContent = a.tournaments.name + " | " + resWhen(a.created_at) + " | " + statusText[a.status];
+
+        main.append(title, meta);
+
+        if (a.status === "frozen") {
+          const actions = document.createElement("div");
+          actions.className = "actions-row";
+          actions.appendChild(resButton("Release", "btn-approve",
+            () => resolvePrize(a, "release", "Release this prize")));
+          actions.appendChild(resButton("Forfeit", "btn-danger-outline",
+            () => resolvePrize(a, "forfeit", "Forfeit this prize")));
+          main.appendChild(actions);
+        }
+
+        const amount = document.createElement("span");
+        amount.className = "amount";
+        amount.textContent = "₦" + a.amount.toLocaleString("en-NG");
+
+        row.append(main, amount);
+        list.appendChild(row);
+      });
+    }
+
+    async function loadWithdrawals() {
+      const list = document.getElementById("withdrawals-list");
+      const summary = document.getElementById("withdrawals-summary");
+      list.textContent = "";
+
+      const { data, error } = await db
+        .from("withdrawal_requests")
+        .select("id, amount, bank_name, account_name, account_number, created_at, profiles!user_id(username, whatsapp)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load withdrawals: " + error.message;
+        return;
+      }
+
+      summary.textContent = data.length + " pending request(s)";
+      if (data.length === 0) {
+        list.textContent = "No pending withdrawals.";
+        return;
+      }
+
+      data.forEach((r) => {
+        const block = document.createElement("article");
+        block.className = "result-block";
+
+        const head = document.createElement("h3");
+        head.textContent =
+          r.profiles.username + " - ₦" + r.amount.toLocaleString("en-NG");
+        block.appendChild(head);
+
+        claimLine(block, "WhatsApp " + r.profiles.whatsapp + " | Requested " + resWhen(r.created_at));
+        claimLine(block, "Send to: " + r.account_name + " | " + r.bank_name + " | " + r.account_number);
+
+        const actions = document.createElement("div");
+        actions.className = "actions-row";
+
+        actions.appendChild(resButton("Copy account number", "btn-secondary", async () => {
+          await navigator.clipboard.writeText(r.account_number);
+          message.textContent = "Account number copied.";
+        }));
+
+        actions.appendChild(resButton("Mark as paid", "btn-approve", async () => {
+          const sure = confirm(
+            "Mark as paid?\n\nOnly do this AFTER you have sent ₦" + r.amount.toLocaleString("en-NG") +
+            " to " + r.account_name + " (" + r.bank_name + ", " + r.account_number + ").\n\n" +
+            "The money will leave the player's wallet."
+          );
+          if (!sure) return;
+          const { error: payError } = await db.rpc("admin_mark_withdrawal_paid", { p_request_id: r.id });
+          if (payError) {
+            message.textContent = "Could not mark as paid: " + payError.message;
+            return;
+          }
+          message.textContent = "Marked as paid. ₦" + r.amount.toLocaleString("en-NG") + " left " + r.profiles.username + "'s wallet.";
+          await loadWithdrawals();
+          await loadPlayers();
+        }));
+
+        actions.appendChild(resButton("Reject", "btn-danger-outline", async () => {
+          const reason = prompt("Reason (optional). The player will see it.");
+          if (reason === null) return;
+          const sure = confirm("Reject this withdrawal request?");
+          if (!sure) return;
+          const { error: rejectError } = await db.rpc("admin_reject_withdrawal", {
+            p_request_id: r.id, p_reason: reason
+          });
+          if (rejectError) {
+            message.textContent = "Could not reject: " + rejectError.message;
+            return;
+          }
+          message.textContent = "Request rejected.";
+          await loadWithdrawals();
+        }));
+
+        block.appendChild(actions);
+        list.appendChild(block);
+      });
+    }
+
     async function init() {
       const { data: sessionData } = await db.auth.getSession();
       if (!sessionData.session) {
@@ -513,6 +1363,10 @@ box.appendChild(cancelButton);
       await loadPending();
       await loadTournaments();
       await loadPlayers();
+      await loadResultsPanel();
+      await loadClaims();
+      await loadPrizes();
+      await loadWithdrawals();
     }
 
     const buttonStyles = {
@@ -522,7 +1376,8 @@ box.appendChild(cancelButton);
       "Serious suspension": "btn-danger",
       "Suspend (weeks)": "btn-danger-outline",
       "Open registration": "btn-primary",
-      "Mark completed": "btn-primary"
+      "Mark completed": "btn-primary",
+      "Generate fixtures": "btn-primary",
     };
 
     function styleAdminButtons() {

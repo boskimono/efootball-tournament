@@ -21,6 +21,7 @@
       <p class="wallet-label">Wallet balance</p>
       <p class="wallet-balance">₦<span id="balance">0</span></p>
       <a class="btn btn-primary" href="deposit.html">Deposit</a>
+      <a class="btn btn-secondary" href="withdraw.html" style="margin-top: 0.5rem;">Withdraw</a>
     </section>
 
     <section class="card">
@@ -36,6 +37,11 @@
     <section class="card">
       <h2>Wallet history</h2>
       <div id="wallet-history"></div>
+    </section>
+
+    <section id="prizes-card" class="card" hidden>
+      <h2>My prizes</h2>
+      <div id="prize-awards"></div>
     </section>
 
     <section class="card">
@@ -73,6 +79,53 @@ const typeLabels = {
   refund: "Refund",
   adjustment: "Adjustment"
 };
+
+const prizeStatus = {
+  credited: "Credited to your wallet",
+  frozen: "Frozen: held by the moderator",
+  released: "Released and credited to your wallet",
+  forfeited: "Forfeited"
+};
+
+async function loadMyPrizes(userId) {
+  const card = document.getElementById("prizes-card");
+  const list = document.getElementById("prize-awards");
+
+  const { data, error } = await db
+    .from("prize_awards")
+    .select("label, amount, status, created_at, tournaments(name)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error || data.length === 0) {
+    card.hidden = true;
+    return;
+  }
+
+  card.hidden = false;
+  list.textContent = "";
+  data.forEach((row) => {
+    const line = document.createElement("div");
+    line.className = "history-row";
+
+    const main = document.createElement("div");
+    main.className = "history-main";
+    const title = document.createElement("span");
+    title.className = "history-title";
+    title.textContent = row.label;
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = row.tournaments.name + " | " + prizeStatus[row.status];
+    main.append(title, meta);
+
+    const amount = document.createElement("span");
+    amount.className = "amount amount-in";
+    amount.textContent = "₦" + row.amount.toLocaleString("en-NG");
+
+    line.append(main, amount);
+    list.appendChild(line);
+  });
+}
 
 async function loadWalletHistory(userId) {
   const list = document.getElementById("wallet-history");
@@ -157,6 +210,7 @@ async function loadWalletHistory(userId) {
 const balance = wallet ? wallet.balance : 0;
 document.getElementById("balance").textContent = balance.toLocaleString("en-NG");
 await loadWalletHistory(user.id);
+await loadMyPrizes(user.id);
     }
 
    
@@ -200,10 +254,15 @@ document.getElementById("pin-form").addEventListener("submit", async (event) => 
     return;
   }
 
-  const { error } = await db.rpc("change_pin", { current_pin: currentPin, new_pin: newPin });
+    const { data: result, error } = await db.rpc("change_pin", { current_pin: currentPin, new_pin: newPin });
 
   if (error) {
     box.textContent = error.message;
+    return;
+  }
+
+  if (result) {
+    box.textContent = result;
     return;
   }
 

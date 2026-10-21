@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fixtures - Broskis Gaming Hub</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav id="nav"><a href="index.html">Home</a></nav>
+
+  <main class="stack">
+    <h1>Fixtures</h1>
+    <p id="tournament-name" class="muted"></p>
+
+    <section id="gw-card" class="card" hidden>
+      <div class="gw-controls">
+        <button type="button" id="prev" class="btn btn-secondary btn-small" aria-label="Previous gameweek">&lsaquo;</button>
+        <select id="gw-select" aria-label="Choose gameweek"></select>
+        <button type="button" id="next" class="btn btn-secondary btn-small" aria-label="Next gameweek">&rsaquo;</button>
+      </div>
+      <p id="gw-times" class="muted small"></p>
+      <p id="gw-countdown" class="countdown"></p>
+    </section>
+
+    <div id="match-list" class="stack"></div>
+    <p id="message" class="message"></p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+
+    let tournament = null;
+    let gameweeks = [];
+    let teamsById = {};
+    let entriesById = {};
+    let index = 0;
+
+    function when(value) {
+      return new Date(value).toLocaleString("en-NG", {
+        timeZone: "Africa/Lagos",
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function clock(ms) {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const d = Math.floor(total / 86400);
+      const h = Math.floor((total % 86400) / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return (d > 0 ? d + "d " : "") +
+        String(h).padStart(2, "0") + "h " +
+        String(m).padStart(2, "0") + "m " +
+        String(s).padStart(2, "0") + "s";
+    }
+
+    function tick() {
+      const gw = gameweeks[index];
+      if (!gw) return;
+      const box = document.getElementById("gw-countdown");
+      const now = Date.now();
+      const opens = new Date(gw.opens_at).getTime();
+      const closes = new Date(gw.closes_at).getTime();
+      const locks = new Date(gw.locks_at).getTime();
+
+      if (now < opens) {
+        box.textContent = "Opens in " + clock(opens - now);
+      } else if (now < closes) {
+        box.textContent = "Window closes in " + clock(closes - now);
+      } else if (now < locks) {
+        box.textContent = "Window closed. Results under review. Locks in " + clock(locks - now);
+      } else {
+        box.textContent = "Locked";
+      }
+    }
+
+    function side(entryId) {
+      const entry = entriesById[entryId];
+      const team = entry ? teamsById[entry.team_id] : null;
+
+      const wrap = document.createElement("div");
+      wrap.className = "match-side";
+
+      if (team && team.logo_path) {
+        const logo = document.createElement("img");
+        logo.src = db.storage.from("club-logos").getPublicUrl(team.logo_path).data.publicUrl;
+        logo.alt = team.name;
+        wrap.appendChild(logo);
+      }
+
+      const code = document.createElement("span");
+      code.className = "match-code";
+      code.textContent = team ? team.short_name : "?";
+      wrap.appendChild(code);
+
+      const user = document.createElement("span");
+      user.className = "match-user";
+      user.textContent = entry ? entry.username : "";
+      wrap.appendChild(user);
+
+      return wrap;
+    }
+
+    async function renderMatches() {
+      const gw = gameweeks[index];
+      const list = document.getElementById("match-list");
+      list.textContent = "";
+
+      const { data, error } = await db
+        .from("matches")
+        .select("id, status, result_type, home_goals, away_goals, home_entry_id, away_entry_id")
+        .eq("gameweek_id", gw.id)
+        .order("id", { ascending: true });
+
+      if (error) {
+        list.textContent = "Could not load this gameweek.";
+        return;
+      }
+
+      data.forEach((match) => {
+        const card = document.createElement("div");
+        card.className = "match";
+
+        card.appendChild(side(match.home_entry_id));
+
+        const mid = document.createElement("div");
+        mid.className = "match-mid";
+        if (match.status === "pending") {
+          mid.textContent = "vs";
+        } else {
+          mid.textContent = match.home_goals + " - " + match.away_goals;
+          const note = document.createElement("span");
+          note.className = "match-note";
+          if (match.result_type === "void") {
+            note.textContent = "Void";
+          } else if (match.result_type === "awarded") {
+            note.textContent = "Awarded";
+          }
+          if (note.textContent) mid.appendChild(note);
+        }
+        card.appendChild(mid);
+
+        card.appendChild(side(match.away_entry_id));
+        list.appendChild(card);
+      });
+    }
+
+    function renderHeader() {
+      const gw = gameweeks[index];
+      document.getElementById("gw-select").value = String(index);
+      document.getElementById("prev").disabled = index === 0;
+      document.getElementById("next").disabled = index === gameweeks.length - 1;
+      document.getElementById("gw-times").textContent =
+        "Opens " + when(gw.opens_at) + " | Closes " + when(gw.closes_at);
+      tick();
+    }
+
+    async function showGameweek(newIndex) {
+      index = newIndex;
+      renderHeader();
+      await renderMatches();
+    }
+
+    async function init() {
+      const { data: t, error } = await db
+        .from("tournaments")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !t) {
+        message.textContent = "Tournament not found.";
+        return;
+      }
+
+      tournament = t;
+      document.getElementById("tournament-name").textContent = t.name;
+
+      const { data: gws, error: gwError } = await db
+        .from("gameweeks")
+        .select("*")
+        .eq("tournament_id", t.id)
+        .order("number", { ascending: true });
+
+      if (gwError) {
+        message.textContent = "Could not load the fixtures.";
+        return;
+      }
+
+      if (gws.length === 0) {
+        document.getElementById("match-list").textContent =
+          "Fixtures will be revealed once all " + t.max_teams + " teams have entered.";
+        return;
+      }
+      gameweeks = gws;
+
+      const { data: teams } = await db
+        .from("tournament_teams")
+        .select("id, name, short_name, logo_path")
+        .eq("tournament_id", t.id);
+      (teams || []).forEach((team) => { teamsById[team.id] = team; });
+
+      const { data: entries } = await db.rpc("tournament_entry_list", { p_tournament_id: t.id });
+      (entries || []).forEach((entry) => { entriesById[entry.entry_id] = entry; });
+
+      const select = document.getElementById("gw-select");
+      gameweeks.forEach((gw, i) => {
+        const option = document.createElement("option");
+        option.value = String(i);
+        option.textContent = "Gameweek " + gw.number;
+        select.appendChild(option);
+      });
+
+      let start = 0;
+      gameweeks.forEach((gw, i) => {
+        if (new Date(gw.opens_at) <= new Date()) start = i;
+      });
+
+      select.addEventListener("change", () => showGameweek(Number(select.value)));
+      document.getElementById("prev").addEventListener("click", () => showGameweek(index - 1));
+      document.getElementById("next").addEventListener("click", () => showGameweek(index + 1));
+
+      document.getElementById("gw-card").hidden = false;
+      await showGameweek(start);
+      setInterval(tick, 1000);
+    }
+
+    init();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

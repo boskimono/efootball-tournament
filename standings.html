@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standings - Broskis Gaming Hub</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav id="nav"><a href="index.html">Home</a></nav>
+
+  <main class="stack">
+    <h1>Standings</h1>
+    <p id="tournament-name" class="muted"></p>
+
+    <div>
+      <div class="st-head" id="st-head" hidden>
+        <span>#</span><span>Team</span><span>P</span><span>GD</span><span>Pts</span>
+      </div>
+      <div id="table"></div>
+    </div>
+
+    <p id="legend" class="muted small" hidden>
+      Tap a team for the full record. A position marked "=" means teams are level on every tiebreaker, including head-to-head.
+    </p>
+    <p id="message" class="message"></p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+
+    function num(value, signed) {
+      return signed && value > 0 ? "+" + value : String(value);
+    }
+
+    function buildRow(row, teamsById) {
+      const team = teamsById[row.team_id];
+
+      const wrap = document.createElement("details");
+      wrap.className = "st-row";
+
+      const summary = document.createElement("summary");
+
+      const pos = document.createElement("span");
+      pos.className = "st-pos";
+      pos.textContent = row.pos + (row.tied ? " =" : "");
+
+      const who = document.createElement("span");
+      who.className = "st-team";
+      if (team && team.logo_path) {
+        const logo = document.createElement("img");
+        logo.src = db.storage.from("club-logos").getPublicUrl(team.logo_path).data.publicUrl;
+        logo.alt = team.name;
+        who.appendChild(logo);
+      }
+      const names = document.createElement("span");
+      const code = document.createElement("strong");
+      code.textContent = team ? team.short_name : "?";
+      const user = document.createElement("small");
+      user.textContent = row.username;
+      names.append(code, user);
+      who.appendChild(names);
+
+      const played = document.createElement("span");
+      played.className = "st-num";
+      played.textContent = row.played;
+
+      const gd = document.createElement("span");
+      gd.className = "st-num";
+      gd.textContent = num(row.gd, true);
+
+      const pts = document.createElement("span");
+      pts.className = "st-num st-pts";
+      pts.textContent = row.points;
+
+      summary.append(pos, who, played, gd, pts);
+
+      const detail = document.createElement("p");
+      detail.className = "st-detail";
+      detail.textContent =
+        "Won " + row.won + " | Drawn " + row.drawn + " | Lost " + row.lost +
+        " | Goals " + row.gf + "-" + row.ga;
+
+      wrap.append(summary, detail);
+      return wrap;
+    }
+
+    async function init() {
+      const { data: t, error } = await db
+        .from("tournaments")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !t) {
+        message.textContent = "Tournament not found.";
+        return;
+      }
+      document.getElementById("tournament-name").textContent = t.name;
+
+      const { data: teams } = await db
+        .from("tournament_teams")
+        .select("id, name, short_name, logo_path")
+        .eq("tournament_id", t.id);
+      const teamsById = {};
+      (teams || []).forEach((team) => { teamsById[team.id] = team; });
+
+      const { data: rows, error: tableError } = await db.rpc("standings_table", { p_tournament_id: t.id });
+      if (tableError) {
+        message.textContent = "Could not load the table.";
+        return;
+      }
+
+      const box = document.getElementById("table");
+      if (rows.length === 0) {
+        box.textContent = "The table appears once teams have entered.";
+        return;
+      }
+
+      document.getElementById("st-head").hidden = false;
+      document.getElementById("legend").hidden = false;
+      rows.forEach((row) => box.appendChild(buildRow(row, teamsById)));
+    }
+
+    init();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

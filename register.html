@@ -69,6 +69,10 @@
       });
 
       if (error) {
+        if (error.status === 429 || error.message.toLowerCase().includes("rate limit")) {
+          message.textContent = "Too many attempts. Please wait a few minutes and try again.";
+          return;
+        }
         if (error.message.includes("already registered")) {
           message.textContent = "Email already in use. Log in instead.";
         } else if (error.message.includes("Database error")) {

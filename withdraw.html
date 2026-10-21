@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Withdraw - Broskis Gaming Hub</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav id="nav"><a href="index.html">Home</a></nav>
+
+  <main class="stack">
+    <h1>Withdraw</h1>
+
+    <section class="card wallet-card">
+      <p class="wallet-label">Available to withdraw</p>
+      <p class="wallet-balance">₦<span id="available">0</span></p>
+      <p class="muted small">Pending requests are already set aside. Winnings are held while you are under a serious suspension.</p>
+    </section>
+
+    <section class="card">
+      <h2>Where should we send it?</h2>
+      <form id="w-form" class="form">
+        <label>Amount (₦500 or more)
+          <input id="w-amount" type="number" min="500" step="1" inputmode="numeric" required>
+        </label>
+        <label>Bank name
+          <input id="w-bank" type="text" maxlength="60" required>
+        </label>
+        <label>Account name
+          <input id="w-name" type="text" maxlength="100" required>
+        </label>
+        <label>Account number (10 digits)
+          <input id="w-number" type="text" inputmode="numeric" maxlength="10" required>
+        </label>
+        <button type="submit" class="btn btn-primary">Review and request</button>
+      </form>
+      <p id="message" class="message"></p>
+      <p class="muted small">The moderator pays within 48 hours. The money leaves your wallet when the payment is marked as sent.</p>
+    </section>
+
+    <section class="card">
+      <h2>My requests</h2>
+      <div id="w-list"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+
+    async function loadAll() {
+      const { data: avail } = await db.rpc("my_withdrawable");
+      document.getElementById("available").textContent = Number(avail || 0).toLocaleString("en-NG");
+
+      const list = document.getElementById("w-list");
+      const { data, error } = await db
+        .from("withdrawal_requests")
+        .select("amount, bank_name, account_number, status, rejection_reason, created_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        list.textContent = "Could not load your requests.";
+        return;
+      }
+
+      list.textContent = "";
+      if (data.length === 0) {
+        list.textContent = "No requests yet.";
+        return;
+      }
+
+      data.forEach((row) => {
+        const line = document.createElement("div");
+        line.className = "history-row";
+
+        const main = document.createElement("div");
+        main.className = "history-main";
+        const title = document.createElement("span");
+        title.className = "history-title";
+        title.textContent = "₦" + row.amount.toLocaleString("en-NG");
+        const meta = document.createElement("span");
+        meta.className = "history-meta";
+        const when = new Date(row.created_at).toLocaleString("en-NG", { timeZone: "Africa/Lagos" });
+        meta.textContent =
+          when + " | " + row.bank_name + " ****" + row.account_number.slice(-4) +
+          (row.status === "rejected" && row.rejection_reason ? " | Reason: " + row.rejection_reason : "");
+        main.append(title, meta);
+
+        const badge = document.createElement("span");
+        badge.className = "badge badge-" + row.status;
+        badge.textContent = row.status === "paid" ? "Paid" : row.status === "rejected" ? "Rejected" : "Pending";
+
+        line.append(main, badge);
+        list.appendChild(line);
+      });
+    }
+
+    document.getElementById("w-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const amount = Number(document.getElementById("w-amount").value);
+      const bank = document.getElementById("w-bank").value.trim();
+      const name = document.getElementById("w-name").value.trim();
+      const number = document.getElementById("w-number").value.trim();
+
+      if (!Number.isInteger(amount) || amount < 500) {
+        message.textContent = "The minimum withdrawal is ₦500.";
+        return;
+      }
+      if (!/^[0-9]{10}$/.test(number)) {
+        message.textContent = "The account number must be exactly 10 digits.";
+        return;
+      }
+
+      const sure = confirm(
+        "Request ₦" + amount.toLocaleString("en-NG") + " to:\n\n" +
+        name + "\n" + bank + " - " + number +
+        "\n\nCheck the details carefully. They cannot be changed."
+      );
+      if (!sure) return;
+
+      const { error } = await db.rpc("request_withdrawal", {
+        p_amount: amount, p_bank: bank, p_name: name, p_number: number
+      });
+      if (error) {
+        message.textContent = error.message;
+        return;
+      }
+
+      message.textContent = "Request submitted. The moderator will pay within 48 hours.";
+      event.target.reset();
+      await loadAll();
+    });
+
+    (async () => {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+      await loadAll();
+    })();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

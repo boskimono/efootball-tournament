@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matches - Broskis Gaming Hub</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav id="nav"><a href="index.html">Home</a></nav>
+
+  <main class="stack">
+    <h1>My matches</h1>
+    <p id="tournament-name" class="muted"></p>
+    <p id="message" class="message"></p>
+
+    <section id="sec-now" hidden>
+      <h2>Play now</h2>
+      <div id="list-now" class="stack"></div>
+    </section>
+
+    <section id="sec-next" hidden>
+      <h2>Coming up</h2>
+      <div id="list-next" class="stack"></div>
+    </section>
+
+    <section id="sec-done" hidden>
+      <h2>Finished</h2>
+      <div id="list-done" class="stack"></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+
+    let me = null;
+    let tournament = null;
+    let matches = [];
+    let teamsById = {};
+    let entriesById = {};
+    let signature = "";
+        let claims = [];
+
+    const badgeClass = {
+      open: "badge-go", submitted: "badge-wait", upcoming: "badge-wait",
+      review: "badge-wait", missed: "badge-bad", locked: "badge-done", decided: "badge-done"
+    };
+    const badgeText = {
+      open: "Open", submitted: "Submitted", upcoming: "Upcoming",
+      review: "Under review", missed: "Missed", locked: "Locked", decided: "Decided"
+    };
+
+    function when(value) {
+      return new Date(value).toLocaleString("en-NG", {
+        timeZone: "Africa/Lagos", weekday: "short", day: "numeric",
+        month: "short", hour: "numeric", minute: "2-digit"
+      });
+    }
+
+    function clock(ms) {
+      const total = Math.max(0, Math.floor(ms / 1000));
+      const d = Math.floor(total / 86400);
+      const h = Math.floor((total % 86400) / 3600);
+      const mi = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return (d > 0 ? d + "d " : "") +
+        String(h).padStart(2, "0") + "h " +
+        String(mi).padStart(2, "0") + "m " +
+        String(s).padStart(2, "0") + "s";
+    }
+
+    function waLink(raw) {
+      let digits = String(raw).replace(/[^0-9]/g, "");
+      if (digits.length === 11 && digits.startsWith("0")) {
+        digits = "234" + digits.slice(1);
+      }
+      return "https://wa.me/" + digits;
+    }
+
+    function stateOf(m) {
+      if (m.match_status !== "pending") return "decided";
+      const now = Date.now();
+      const opens = new Date(m.gw_opens_at).getTime();
+      const closes = new Date(m.gw_closes_at).getTime();
+      const locks = new Date(m.gw_locks_at).getTime();
+      if (now < opens) return "upcoming";
+      if (now <= closes) return m.i_submitted ? "submitted" : "open";
+      if (now < locks) return m.i_submitted ? "review" : "missed";
+      return "locked";
+    }
+
+    function teamOf(entryId) {
+      const entry = entriesById[entryId];
+      return entry ? teamsById[entry.team_id] : null;
+    }
+
+    function codeOf(entryId) {
+      const team = teamOf(entryId);
+      return team ? team.short_name : "?";
+    }
+
+    function side(entryId, myEntryId) {
+      const entry = entriesById[entryId];
+      const team = teamOf(entryId);
+
+      const wrap = document.createElement("div");
+      wrap.className = "match-side";
+
+      if (team && team.logo_path) {
+        const logo = document.createElement("img");
+        logo.src = db.storage.from("club-logos").getPublicUrl(team.logo_path).data.publicUrl;
+        logo.alt = team.name;
+        wrap.appendChild(logo);
+      }
+
+      const code = document.createElement("span");
+      code.className = "match-code";
+      code.textContent = codeOf(entryId);
+      wrap.appendChild(code);
+
+      const user = document.createElement("span");
+      user.className = "match-user";
+      user.textContent = (entry ? entry.username : "") + (entryId === myEntryId ? " (you)" : "");
+      wrap.appendChild(user);
+
+      return wrap;
+    }
+
+    function note(text) {
+      const p = document.createElement("p");
+      p.className = "note";
+      p.textContent = text;
+      return p;
+    }
+
+    function addContact(card, m) {
+      const holder = document.createElement("p");
+      holder.className = "note";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-secondary btn-small";
+      button.textContent = "Show opponent's WhatsApp";
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        const { data, error } = await db.rpc("match_contact", { p_match_id: m.match_id });
+        if (error) {
+          holder.textContent = error.message;
+          button.disabled = false;
+          return;
+        }
+        holder.textContent = "";
+        const number = document.createElement("span");
+        number.textContent = data + "  ";
+        const link = document.createElement("a");
+        link.href = waLink(data);
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = "Chat on WhatsApp";
+        holder.append(number, link);
+        button.hidden = true;
+      });
+
+      const row = document.createElement("div");
+      row.append(button, holder);
+      card.appendChild(row);
+    }
+
+    function addSubmitForm(card, m) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "btn btn-primary";
+      toggle.textContent = "Submit result";
+      card.appendChild(toggle);
+
+      const panel = document.createElement("div");
+      panel.className = "panel";
+      panel.hidden = true;
+
+      const form = document.createElement("form");
+      form.className = "form";
+      form.innerHTML =
+        '<div class="score-row">' +
+        '<label><span class="l-mine"></span><input name="mine" type="number" min="0" max="30" step="1" inputmode="numeric" required></label>' +
+        '<label><span class="l-opp"></span><input name="opp" type="number" min="0" max="30" step="1" inputmode="numeric" required></label>' +
+        '</div>' +
+        '<label>Screenshot of the full-time screen (JPG or PNG, up to 5 MB)<input name="file" type="file" accept="image/jpeg,image/png" required></label>' +
+        '<button type="submit" class="btn btn-primary">Review and submit</button>';
+
+      form.querySelector(".l-mine").textContent = codeOf(m.my_entry_id) + " goals (you)";
+      form.querySelector(".l-opp").textContent = codeOf(m.opp_entry_id) + " goals";
+
+      const result = document.createElement("p");
+      result.className = "message";
+
+      toggle.addEventListener("click", () => {
+        panel.hidden = !panel.hidden;
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const mine = Number(form.elements.mine.value);
+        const opp = Number(form.elements.opp.value);
+        const file = form.elements.file.files[0];
+
+        if (!Number.isInteger(mine) || !Number.isInteger(opp) || mine < 0 || opp < 0 || mine > 30 || opp > 30) {
+          result.textContent = "Scores must be whole numbers from 0 to 30.";
+          return;
+        }
+        if (!file) {
+          result.textContent = "A screenshot is required.";
+          return;
+        }
+        const extensions = { "image/jpeg": "jpg", "image/png": "png" };
+        const ext = extensions[file.type];
+        if (!ext) {
+          result.textContent = "The screenshot must be a JPG or PNG.";
+          return;
+        }
+        if (file.size > 5242880) {
+          result.textContent = "The screenshot must be 5 MB or smaller.";
+          return;
+        }
+
+        const sure = confirm(
+          "You are submitting:\n\n" +
+          codeOf(m.my_entry_id) + " " + mine + " - " + opp + " " + codeOf(m.opp_entry_id) +
+          "\n\nThis cannot be changed. Submit?"
+        );
+        if (!sure) return;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        result.textContent = "Uploading...";
+
+        const path = m.match_id + "/" + me.id + "/" + Date.now() + "." + ext;
+        const { error: uploadError } = await db.storage.from("match-proofs").upload(path, file);
+        if (uploadError) {
+          result.textContent = "Upload failed: " + uploadError.message;
+          submitButton.disabled = false;
+          return;
+        }
+
+        const { error } = await db.rpc("submit_result", {
+          p_match_id: m.match_id,
+          p_my_goals: mine,
+          p_opp_goals: opp,
+          p_screenshot_path: path
+        });
+        if (error) {
+          result.textContent = error.message;
+          submitButton.disabled = false;
+          return;
+        }
+
+        message.textContent = "Result submitted.";
+        await load();
+      });
+
+      panel.append(form, result);
+      card.appendChild(panel);
+    }
+
+    function claimsFor(m) {
+      return {
+        mine: claims.find((c) => c.match_id === m.match_id && c.i_am_claimant) || null,
+        against: claims.find((c) => c.match_id === m.match_id && !c.i_am_claimant) || null
+      };
+    }
+
+    function extOf(file) {
+      return { "image/jpeg": "jpg", "image/png": "png" }[file.type] || null;
+    }
+
+    function fileProblem(file) {
+      if (!file) return "Every attempt needs a screenshot.";
+      if (!extOf(file)) return "Screenshots must be JPG or PNG files.";
+      if (file.size > 5242880) return "Each screenshot must be 5 MB or smaller.";
+      return "";
+    }
+
+    async function uploadProof(file, matchId, label) {
+      const path = matchId + "/" + me.id + "/" + Date.now() + "-" + label + "." + extOf(file);
+      const { error } = await db.storage.from("claim-proofs").upload(path, file);
+      if (error) throw new Error("Upload failed: " + error.message);
+      return path;
+    }
+
+    function attemptRow(number) {
+      const row = document.createElement("div");
+      row.className = "sub-card attempt";
+      row.innerHTML =
+        "<strong></strong>" +
+        '<label>Date and time (Lagos time)<input type="datetime-local" class="a-time" required></label>' +
+        '<label>Where did you message them?<select class="a-channel">' +
+        '<option value="private">Private message</option>' +
+        '<option value="group">Group message</option></select></label>' +
+        '<label>Screenshot<input type="file" class="a-file" accept="image/jpeg,image/png" required></label>';
+      row.querySelector("strong").textContent = "Attempt " + number;
+      return row;
+    }
+
+    function addClaimForm(card, m) {
+      if (claimsFor(m).mine) return;
+
+      const deadline = new Date(m.gw_closes_at).getTime() + 3 * 3600 * 1000;
+      if (Date.now() > deadline) {
+        card.appendChild(note("The deadline for walkover claims has passed."));
+        return;
+      }
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "btn btn-secondary";
+      toggle.textContent = "Claim walkover";
+      card.appendChild(toggle);
+
+      const panel = document.createElement("div");
+      panel.className = "panel stack";
+      panel.hidden = true;
+
+      const rules = document.createElement("ul");
+      rules.className = "checklist";
+      [
+        "Use this only if your opponent did not reply, did not turn up, or quit the match. A match you played without proof is void and cannot be claimed.",
+        "Claims close at 9:00pm on the day the window closes.",
+        "You need at least two attempts to reach them, at least 12 hours apart, and at least one must be a private message.",
+        "Your first attempt must be at least 24 hours before the window closes, and every attempt must be inside the window.",
+        "Each attempt needs a screenshot showing the date, the time and your opponent's name.",
+        "If they quit during the match, also add a screenshot of the match taken at that moment.",
+        "A false claim is treated as cheating."
+      ].forEach((text) => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        rules.appendChild(li);
+      });
+
+      const form = document.createElement("form");
+      form.className = "form";
+      form.innerHTML =
+        '<label>What happened?<select name="kind">' +
+        '<option value="no_show">My opponent did not reply or turn up</option>' +
+        '<option value="quit">My opponent quit during the match</option></select></label>' +
+        '<div class="stack attempts"></div>' +
+        '<button type="button" class="btn btn-secondary btn-small add-attempt">Add another attempt</button>' +
+        '<label class="quit-only" hidden>Screenshot of the match, taken when they quit' +
+        '<input name="matchshot" type="file" accept="image/jpeg,image/png"></label>' +
+        '<button type="submit" class="btn btn-primary">Review and file claim</button>';
+
+      const attempts = form.querySelector(".attempts");
+      attempts.appendChild(attemptRow(1));
+      attempts.appendChild(attemptRow(2));
+
+      form.querySelector(".add-attempt").addEventListener("click", () => {
+        const count = attempts.children.length;
+        if (count < 5) attempts.appendChild(attemptRow(count + 1));
+      });
+
+      form.elements.kind.addEventListener("change", () => {
+        form.querySelector(".quit-only").hidden = form.elements.kind.value !== "quit";
+      });
+
+      const result = document.createElement("p");
+      result.className = "message";
+
+      toggle.addEventListener("click", () => { panel.hidden = !panel.hidden; });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const kind = form.elements.kind.value;
+        const opens = new Date(m.gw_opens_at).getTime();
+        const closes = new Date(m.gw_closes_at).getTime();
+        const hour = 3600 * 1000;
+
+        const items = Array.from(form.querySelectorAll(".attempt")).map((row) => ({
+          at: new Date(row.querySelector(".a-time").value + ":00+01:00"),
+          channel: row.querySelector(".a-channel").value,
+          file: row.querySelector(".a-file").files[0]
+        }));
+
+        let problem = "";
+        items.forEach((it) => {
+          if (problem) return;
+          const t = it.at.getTime();
+          if (isNaN(t)) problem = "Enter the date and time of every attempt.";
+          else if (t < opens || t > closes) problem = "Attempts must be made during the gameweek window.";
+          else if (t > Date.now()) problem = "An attempt cannot be in the future.";
+          else problem = fileProblem(it.file);
+        });
+
+        if (!problem) {
+          const times = items.map((it) => it.at.getTime());
+          const shot = form.elements.matchshot.files[0];
+          if (Math.max(...times) - Math.min(...times) < 12 * hour) {
+            problem = "Your attempts must be at least 12 hours apart.";
+          } else if (!items.some((it) => it.channel === "private")) {
+            problem = "At least one attempt must be a private message.";
+          } else if (Math.min(...times) > closes - 24 * hour) {
+            problem = "Your first attempt must be made at least 24 hours before the window closes.";
+          } else if (kind === "quit" && !shot) {
+            problem = "A screenshot of the match is required when your opponent quit.";
+          } else if (kind === "quit") {
+            problem = fileProblem(shot);
+          }
+        }
+
+        if (problem) {
+          result.textContent = problem;
+          return;
+        }
+
+        const sure = confirm("File this walkover claim?\n\nIt cannot be changed. A false claim is treated as cheating.");
+        if (!sure) return;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        result.textContent = "Uploading...";
+
+        try {
+          const list = [];
+          for (let i = 0; i < items.length; i++) {
+            const path = await uploadProof(items[i].file, m.match_id, "a" + i);
+            list.push({ at: items[i].at.toISOString(), channel: items[i].channel, path: path });
+          }
+          let matchPath = null;
+          if (kind === "quit") {
+            matchPath = await uploadProof(form.elements.matchshot.files[0], m.match_id, "match");
+          }
+
+          const { error } = await db.rpc("submit_walkover_claim", {
+            p_match_id: m.match_id,
+            p_kind: kind,
+            p_attempts: list,
+            p_match_screenshot: matchPath
+          });
+          if (error) {
+            result.textContent = error.message;
+            submitButton.disabled = false;
+            return;
+          }
+          message.textContent = "Walkover claim filed.";
+          await load();
+        } catch (err) {
+          result.textContent = err.message;
+          submitButton.disabled = false;
+        }
+      });
+
+      panel.append(rules, form, result);
+      card.appendChild(panel);
+    }
+
+    function addReplyForm(card, claim, m) {
+      if (Date.now() >= new Date(m.gw_locks_at).getTime()) return;
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "btn btn-secondary";
+      toggle.textContent = "Reply with proof";
+      card.appendChild(toggle);
+
+      const panel = document.createElement("div");
+      panel.className = "panel";
+      panel.hidden = true;
+
+      const form = document.createElement("form");
+      form.className = "form";
+      form.innerHTML =
+        '<label>Your side of the story (optional, up to 500 characters)<textarea name="note" maxlength="500"></textarea></label>' +
+        '<label>Screenshots (1 to 5, JPG or PNG)<input name="files" type="file" accept="image/jpeg,image/png" multiple required></label>' +
+        '<button type="submit" class="btn btn-primary">Review and send reply</button>';
+
+      const result = document.createElement("p");
+      result.className = "message";
+
+      toggle.addEventListener("click", () => { panel.hidden = !panel.hidden; });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const files = Array.from(form.elements.files.files);
+
+        if (files.length < 1 || files.length > 5) {
+          result.textContent = "Attach between 1 and 5 screenshots.";
+          return;
+        }
+        const bad = files.map(fileProblem).find((p) => p !== "");
+        if (bad) {
+          result.textContent = bad.replace("Every attempt needs a screenshot.", "Attach a screenshot.");
+          return;
+        }
+
+        const sure = confirm("Send your reply?\n\nIt cannot be changed.");
+        if (!sure) return;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        result.textContent = "Uploading...";
+
+        try {
+          const paths = [];
+          for (let i = 0; i < files.length; i++) {
+            paths.push(await uploadProof(files[i], m.match_id, "r" + i));
+          }
+          const { error } = await db.rpc("submit_claim_reply", {
+            p_claim_id: claim.claim_id,
+            p_note: form.elements.note.value,
+            p_paths: paths
+          });
+          if (error) {
+            result.textContent = error.message;
+            submitButton.disabled = false;
+            return;
+          }
+          message.textContent = "Reply sent.";
+          await load();
+        } catch (err) {
+          result.textContent = err.message;
+          submitButton.disabled = false;
+        }
+      });
+
+      panel.append(form, result);
+      card.appendChild(panel);
+    }
+
+    function addClaimNotices(card, m) {
+      const { mine, against } = claimsFor(m);
+      const kindText = { no_show: "did not reply or turn up", quit: "quit during the match" };
+
+      if (mine) {
+        if (mine.claim_status === "pending") {
+          card.appendChild(note("You filed a walkover claim on " + when(mine.filed_at) + ". The moderator will review it."));
+        } else if (mine.claim_status === "upheld") {
+          card.appendChild(note("Your walkover claim was upheld."));
+        } else {
+          card.appendChild(note("Your walkover claim was dismissed. " + (mine.decision_reason || "")));
+        }
+      }
+
+      if (against) {
+        if (against.claim_status === "pending") {
+          const lines = against.attempts
+            .map((a) => when(a.at) + " (" + (a.channel === "private" ? "private message" : "group message") + ")")
+            .join("; ");
+          card.appendChild(note(
+            "Your opponent filed a walkover claim on " + when(against.filed_at) +
+            ", saying you " + kindText[against.kind] + ". Attempts they listed: " + lines + "."
+          ));
+          if (against.reply_received) {
+            card.appendChild(note("You replied. The moderator will decide before the gameweek locks."));
+          } else {
+            addReplyForm(card, against, m);
+          }
+        } else if (against.claim_status === "upheld") {
+          card.appendChild(note("The walkover claim against you was upheld."));
+        } else {
+          card.appendChild(note("The walkover claim against you was dismissed. " + (against.decision_reason || "")));
+        }
+      }
+    }
+
+    function buildCard(m, state) {
+      const card = document.createElement("article");
+      card.className = "card my-match";
+
+      const head = document.createElement("div");
+      head.className = "my-match-head";
+      const title = document.createElement("h3");
+      title.textContent = "Gameweek " + m.gw_number;
+      const badge = document.createElement("span");
+
+      let mine = null;
+      let theirs = null;
+      let outcome = "";
+      if (state === "decided") {
+        mine = m.is_home ? m.goals_home : m.goals_away;
+        theirs = m.is_home ? m.goals_away : m.goals_home;
+        outcome = mine > theirs ? "Win" : mine < theirs ? "Loss" : "Draw";
+      }
+
+      if (state === "decided") {
+        if (m.res_type === "void") {
+          badge.className = "badge badge-done";
+          badge.textContent = "Void";
+        } else {
+          badge.className = "badge " + (outcome === "Win" ? "badge-go" : outcome === "Loss" ? "badge-bad" : "badge-done");
+          badge.textContent = outcome;
+        }
+      } else {
+        badge.className = "badge " + badgeClass[state];
+        badge.textContent = badgeText[state];
+      }
+      head.append(title, badge);
+      card.appendChild(head);
+
+      const homeId = m.is_home ? m.my_entry_id : m.opp_entry_id;
+      const awayId = m.is_home ? m.opp_entry_id : m.my_entry_id;
+      const board = document.createElement("div");
+      board.className = "match";
+      board.appendChild(side(homeId, m.my_entry_id));
+      const mid = document.createElement("div");
+      mid.className = "match-mid";
+      mid.textContent = state === "decided" ? m.goals_home + " - " + m.goals_away : "vs";
+      board.appendChild(mid);
+      board.appendChild(side(awayId, m.my_entry_id));
+      card.appendChild(board);
+
+      card.appendChild(note(
+        m.is_home
+          ? "You are the home team: create the match room."
+          : "You are the away team: join your opponent's match room."
+      ));
+
+      const mySubmission = m.i_submitted
+        ? "You submitted " + codeOf(m.my_entry_id) + " " + m.my_goals + " - " + m.opp_goals + " " + codeOf(m.opp_entry_id) + ". "
+        : "";
+
+      if (state === "upcoming") {
+        card.appendChild(note("Opens " + when(m.gw_opens_at) + ". Closes " + when(m.gw_closes_at) + "."));
+      } else if (state === "open") {
+        const closing = note("Closes " + when(m.gw_closes_at) + ". ");
+        const clockEl = document.createElement("strong");
+        clockEl.dataset.closes = m.gw_closes_at;
+        closing.appendChild(clockEl);
+        card.appendChild(closing);
+        addContact(card, m);
+        addSubmitForm(card, m);
+        addClaimForm(card, m);
+      } else if (state === "submitted") {
+        card.appendChild(note(
+          mySubmission + (m.opponent_submitted ? "Both players have submitted. Waiting for the moderator." : "Waiting for your opponent.")
+        ));
+        addContact(card, m);
+      } else if (state === "review") {
+        card.appendChild(note("Window closed. " + mySubmission + "Under moderator review."));
+        addContact(card, m);
+      } else if (state === "missed") {
+        card.appendChild(note("Window closed. You did not submit a result."));
+        addContact(card, m);
+        addClaimForm(card, m);
+      } else if (state === "locked") {
+        card.appendChild(note("This gameweek is locked."));
+      } else if (state === "decided") {
+        let text;
+        if (m.res_type === "void") {
+          text = "Declared void: 0-0, no points for either team.";
+        } else if (m.res_type === "awarded") {
+          text = "Awarded: " + outcome + " " + mine + " - " + theirs + ".";
+        } else {
+          text = "Final score: " + outcome + " " + mine + " - " + theirs + ".";
+        }
+        card.appendChild(note(text));
+        if (m.decision_reason) {
+          const why = note("Moderator's note: " + m.decision_reason);
+          card.appendChild(why);
+        }
+      }
+
+      addClaimNotices(card, m);
+      return card;
+    }
+
+    function render() {
+      const groups = { now: [], next: [], done: [] };
+      matches.forEach((m) => {
+        const state = stateOf(m);
+        const group = (state === "open" || state === "submitted") ? "now" : state === "upcoming" ? "next" : "done";
+        groups[group].push({ m, state });
+      });
+
+      groups.done.reverse();
+
+      [["now", "list-now", "sec-now"], ["next", "list-next", "sec-next"], ["done", "list-done", "sec-done"]]
+        .forEach(([key, listId, sectionId]) => {
+          const list = document.getElementById(listId);
+          list.textContent = "";
+          groups[key].forEach(({ m, state }) => list.appendChild(buildCard(m, state)));
+          document.getElementById(sectionId).hidden = groups[key].length === 0;
+        });
+
+      signature = matches.map(stateOf).join(",");
+      tick();
+    }
+
+    function tick() {
+      document.querySelectorAll("[data-closes]").forEach((el) => {
+        el.textContent = "Closes in " + clock(new Date(el.dataset.closes).getTime() - Date.now());
+      });
+      if (matches.length > 0 && matches.map(stateOf).join(",") !== signature) {
+        render();
+      }
+    }
+
+    async function load() {
+      const { data, error } = await db.rpc("my_matches", { p_tournament_id: tournament.id });
+      if (error) {
+        message.textContent = "Could not load your matches: " + error.message;
+        return;
+      }
+      matches = data;
+      const { data: claimRows } = await db.rpc("my_claims", { p_tournament_id: tournament.id });
+      claims = claimRows || [];
+      if (matches.length === 0) {
+        message.textContent = "You have no matches here yet. Fixtures appear once all teams have entered.";
+      }
+      render();
+    }
+
+    async function init() {
+      const { data: sessionData } = await db.auth.getSession();
+      if (!sessionData.session) {
+        window.location.href = "login.html";
+        return;
+      }
+      me = sessionData.session.user;
+
+      const { data: t, error } = await db
+        .from("tournaments")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !t) {
+        message.textContent = "Tournament not found.";
+        return;
+      }
+      tournament = t;
+      document.getElementById("tournament-name").textContent = t.name;
+
+      const { data: teams } = await db
+        .from("tournament_teams")
+        .select("id, name, short_name, logo_path")
+        .eq("tournament_id", t.id);
+      (teams || []).forEach((team) => { teamsById[team.id] = team; });
+
+      const { data: entries } = await db.rpc("tournament_entry_list", { p_tournament_id: t.id });
+      (entries || []).forEach((entry) => { entriesById[entry.entry_id] = entry; });
+
+      await load();
+      setInterval(tick, 1000);
+    }
+
+    init();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

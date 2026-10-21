@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stats - Broskis Gaming Hub</title>
+  <link rel="icon" type="image/png" href="images/favicon.png">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <nav id="nav"><a href="index.html">Home</a></nav>
+
+  <main class="stack">
+    <h1>Stats</h1>
+    <p id="tournament-name" class="muted"></p>
+
+    <section class="card">
+      <h2>Best attack</h2>
+      <p class="muted small">Most goals scored in played matches. Ties are broken by most wins. Awarded and void results do not count.</p>
+      <div id="attack"></div>
+    </section>
+
+    <section class="card">
+      <h2>Best defence</h2>
+      <p class="muted small">Fewest goals conceded in played matches. Ties are broken by most clean sheets. Awarded and void results do not count.</p>
+      <div id="defence"></div>
+    </section>
+
+    <section class="card">
+      <h2>Team of the Moment</h2>
+      <p class="muted small">The table over just that moment's gameweeks. A moment is final once all its gameweeks are settled.</p>
+      <div class="gw-controls">
+        <select id="moment-select" aria-label="Choose moment"></select>
+      </div>
+      <p id="moment-status" class="muted small"></p>
+      <p id="moment-winner" class="prize-total"></p>
+      <div id="moment-table"></div>
+    </section>
+
+    <p id="message" class="message"></p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = "https://hthcwwthilhdhakqmozz.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_FX-gMajPsnRqDJAr1Ny0hg_rJ_vRir6";
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const message = document.getElementById("message");
+    const slug = new URLSearchParams(window.location.search).get("t") || "broskis-epl";
+
+    let tournament = null;
+    let teamsById = {};
+    let moments = [];
+
+    function codeOf(row) {
+      const team = teamsById[row.team_id];
+      return (team ? team.short_name : "?") + " (" + row.username + ")";
+    }
+
+    function addLine(container, pos, row, main, meta) {
+      const line = document.createElement("div");
+      line.className = "history-row";
+
+      const left = document.createElement("div");
+      left.className = "history-main";
+      const title = document.createElement("span");
+      title.className = "history-title";
+      title.textContent = pos + ". " + codeOf(row);
+      const sub = document.createElement("span");
+      sub.className = "history-meta";
+      sub.textContent = meta;
+      left.append(title, sub);
+
+      const right = document.createElement("span");
+      right.className = "amount";
+      right.textContent = main;
+
+      line.append(left, right);
+      container.appendChild(line);
+    }
+
+    function renderRanked(container, rows, compare, mainText, metaText) {
+      container.textContent = "";
+      const list = rows.filter((r) => r.played > 0).sort(compare);
+      if (list.length === 0) {
+        container.textContent = "No played matches yet.";
+        return;
+      }
+      let pos = 1;
+      list.forEach((row, i) => {
+        if (i > 0 && compare(list[i - 1], row) !== 0) pos = i + 1;
+        addLine(container, pos, row, mainText(row), metaText(row));
+      });
+    }
+
+    async function showMoment() {
+      const m = moments[Number(document.getElementById("moment-select").value)];
+      const box = document.getElementById("moment-table");
+      const winner = document.getElementById("moment-winner");
+      box.textContent = "";
+      winner.textContent = "";
+      if (!m) return;
+
+      document.getElementById("moment-status").textContent =
+        "Gameweeks " + m.gw_from + " to " + m.gw_to + " | " + (m.complete ? "Final" : "In progress");
+
+      const { data: rows, error } = await db.rpc("standings_table", {
+        p_tournament_id: tournament.id,
+        p_from_gw: m.gw_from,
+        p_to_gw: m.gw_to
+      });
+      if (error) {
+        box.textContent = "Could not load this moment.";
+        return;
+      }
+
+      rows.forEach((row) => {
+        addLine(
+          box, row.pos + (row.tied ? " =" : ""), row, row.points + " pts",
+          "Played " + row.played + " | GD " + (row.gd > 0 ? "+" : "") + row.gd + " | Goals " + row.gf + "-" + row.ga
+        );
+      });
+
+      if (m.complete && rows.some((r) => r.played > 0)) {
+        const top = rows.filter((r) => r.pos === 1).map(codeOf);
+        winner.textContent = "Team of the Moment: " + top.join(" and ") + (top.length > 1 ? " (shared)" : "");
+      }
+    }
+
+    async function init() {
+      const { data: t, error } = await db
+        .from("tournaments")
+        .select("*")
+        .eq("slug", slug)
+        .maybeSingle();
+
+      if (error || !t) {
+        message.textContent = "Tournament not found.";
+        return;
+      }
+      tournament = t;
+      document.getElementById("tournament-name").textContent = t.name;
+
+      const { data: teams } = await db
+        .from("tournament_teams")
+        .select("id, name, short_name, logo_path")
+        .eq("tournament_id", t.id);
+      (teams || []).forEach((team) => { teamsById[team.id] = team; });
+
+      const { data: stats, error: statsError } = await db.rpc("stats_table", { p_tournament_id: t.id });
+      if (statsError) {
+        message.textContent = "Could not load the stats.";
+        return;
+      }
+
+      renderRanked(
+        document.getElementById("attack"), stats,
+        (a, b) => (b.gf - a.gf) || (b.won - a.won),
+        (r) => r.gf + " goals",
+        (r) => "Played " + r.played + " | Wins " + r.won
+      );
+
+      renderRanked(
+        document.getElementById("defence"), stats,
+        (a, b) => (a.ga - b.ga) || (b.clean_sheets - a.clean_sheets),
+        (r) => r.ga + " conceded",
+        (r) => "Played " + r.played + " | Clean sheets " + r.clean_sheets
+      );
+
+      const { data: ms } = await db.rpc("tournament_moments", { p_tournament_id: t.id });
+      moments = ms || [];
+
+      const select = document.getElementById("moment-select");
+      if (moments.length === 0) {
+        document.getElementById("moment-table").textContent = "Moments appear once fixtures are generated.";
+        return;
+      }
+
+      moments.forEach((m, i) => {
+        const option = document.createElement("option");
+        option.value = String(i);
+        option.textContent = "Moment " + m.moment + " (GW " + m.gw_from + "-" + m.gw_to + ")";
+        select.appendChild(option);
+      });
+
+      let start = moments.findIndex((m) => !m.complete);
+      if (start === -1) start = moments.length - 1;
+      select.value = String(start);
+      select.addEventListener("change", showMoment);
+      await showMoment();
+    }
+
+    init();
+  </script>
+  <script src="nav.js"></script>
+</body>
+</html>

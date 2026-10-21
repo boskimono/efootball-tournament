@@ -17,11 +17,16 @@
 
   const links = [
     ["index.html", "Home"],
-    ["contest.html", "Contests"]
+    ["contest.html", "Contests"],
+    ["fixtures.html", "Fixtures"],
+    ["standings.html", "Standings"],
+    ["stats.html", "Stats"]
   ];
 
   if (session) {
+        links.push(["matches.html", "Matches"]);
     links.push(["deposit.html", "Deposit"]);
+    links.push(["withdraw.html", "Withdraw"]);
     links.push(["profile.html", "Profile"]);
   }
 
@@ -112,4 +117,8 @@
   nav.appendChild(bar);
   nav.appendChild(overlay);
   nav.appendChild(list);
+
+  const { error: uploadError } = await db.storage
+    .from("match-proofs")
+    .upload(path, file);
 })();

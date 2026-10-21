@@ -57,7 +57,12 @@
       });
 
       if (error) {
-        message.textContent = "Wrong email or PIN.";
+        const text = (error.message || "").toLowerCase();
+        if (error.status === 429 || text.includes("rate limit")) {
+          message.textContent = "Too many attempts. Please wait a few minutes and try again.";
+        } else {
+          message.textContent = "Wrong email or PIN.";
+        }
         return;
       }
       window.location.href = "profile.html";
